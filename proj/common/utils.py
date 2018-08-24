@@ -12,7 +12,7 @@ import tblib.pickling_support
 
 from tqdm import trange
 from proj.common import logger
-from proj.common.tqdm_out import term
+from proj.common.tqdm_util import std_out
 
 tblib.pickling_support.install()
 
@@ -30,6 +30,23 @@ def flatten_dim(space):
         return space.n
     else:
         assert False
+
+
+def get_flat_params(model):
+    flat_params = []
+    for param in model.parameters():
+        flat_params.append(param.view(-1).detach().numpy())
+    return np.concatenate(flat_params)
+
+
+def set_flat_params(model, flat_params):
+    offset = 0
+    flat_params = torch.tensor(flat_params)
+    for param in model.parameters():
+        param.detach().copy_(
+            flat_params[offset:offset + param.numel()].view(param.size())
+        )
+        offset += param.numel()
 
 
 def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
@@ -269,7 +286,7 @@ def parallel_collect_samples(env_pool, policy, num_samples):
         obs = env_pool.reset()
 
     for _ in trange(0, num_samples, env_pool.n_envs, desc="Sampling",
-                    unit="steps", leave=False, file=term(), dynamic_ncols=True):
+                    unit="step", leave=False, file=std_out(), dynamic_ncols=True):
         actions, dists = policy.get_actions(obs)
         next_obs, rews, dones, infos = env_pool.step(actions)
         for idx in range(env_pool.n_envs):

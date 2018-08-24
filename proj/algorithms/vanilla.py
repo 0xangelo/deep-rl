@@ -2,7 +2,6 @@ import torch
 from tqdm import trange
 from proj.common import logger
 from proj.common.alg_utils import *
-from proj.common.tqdm_out import redirect, term
 
 def vanilla(env, env_maker, policy, baseline, n_iter=100, n_batch=2000, n_envs=mp.cpu_count(),
             optimizer=None, last_iter=-1, gamma=0.99, gae_lambda=0.97, snapshot_saver=None):
@@ -11,9 +10,9 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_batch=2000, n_envs=m
         optimizer = torch.optim.Adam(policy.parameters())
 
     # Algorithm main loop
-    with EnvPool(env_maker, n_envs=n_envs) as env_pool, redirect():
+    with EnvPool(env_maker, n_envs=n_envs) as env_pool:
         for iter in trange(last_iter + 1, n_iter, desc="Training",
-                           unit="updts", file=term(), dynamic_ncols=True):
+                           unit="updts", file=std_out(), dynamic_ncols=True):
             logger.info("Starting iteration {}".format(iter))
             logger.logkv("Iteration", iter)
             

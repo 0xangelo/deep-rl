@@ -5,38 +5,38 @@ from proj.common.utils import SnapshotSaver
 from proj.common.env_makers import EnvMaker
 from proj.common.models import MlpPolicy, MlpBaseline
 from proj.common.tqdm_util import tqdm_out
-from proj.algorithms import vanilla
-from sacred import SETTINGS, Experiment
+from proj.algorithms import tnpg
+from sacred import Experiment
 from sacred.observers import MongoObserver
+from sacred import SETTINGS
 SETTINGS['CAPTURE_MODE']='no'
-ex = Experiment('vanilla-mountaincar-continuous')
+ex = Experiment('tnpg-cartpole')
 ex.observers.append(MongoObserver.create(db_name='pgtorch'))
 
 @ex.config
 def config():
-    log_dir = 'data/vanilla-mountaincar-continuous'
-    n_iter = 200
-    n_batch = 8000
-    n_envs = 16
-    lr = 1e-3
-    interval = 10
+    log_dir = 'data/tnpg-cartpole'
+    n_iter = 100
+    n_batch = 2000
+    n_envs = 4
+    step_size = 0.01
+    kl_subsamp_ratio = 0.8
+    interval = 1
 
 @ex.automain
-def main(log_dir, n_iter, n_batch, n_envs, lr, interval, seed):
+def main(log_dir, n_iter, n_batch, n_envs, step_size, kl_subsamp_ratio, interval, seed):
     torch.manual_seed(seed)
-    torch.set_num_threads(4)
     log_dir += '-' + str(seed) + '/'
     os.system("rm -rf {}".format(log_dir))
 
-    with tqdm_out(), logger.session(log_dir, format_strs=['stdout','json']):
-        env_maker = EnvMaker('MountainCarContinuous-v0')
+    with tqdm_out(), logger.session(log_dir):
+        env_maker = EnvMaker('CartPole-v0')
         env = env_maker.make()
         ob_space, ac_space = env.observation_space, env.action_space
         policy = MlpPolicy(ob_space, ac_space)
         baseline = MlpBaseline(ob_space, ac_space)
-        optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
 
-        vanilla(
+        tnpg(
             env=env,
             env_maker=env_maker,
             policy=policy,
@@ -44,6 +44,7 @@ def main(log_dir, n_iter, n_batch, n_envs, lr, interval, seed):
             n_iter=n_iter,
             n_batch=n_batch,
             n_envs=n_envs,
-            optimizer=optimizer,
+            step_size=step_size,
+            kl_subsamp_ratio=kl_subsamp_ratio,
             snapshot_saver=SnapshotSaver(log_dir, interval=interval)
         )

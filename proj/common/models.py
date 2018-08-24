@@ -1,10 +1,9 @@
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from proj.common.utils import flatten_dim
 from proj.common.input import observation_input
-from proj.common.distributions import Normal, Categorical, make_pdtype
+from proj.common.distributions import *
 
 torch.set_default_tensor_type(torch.FloatTensor)
 
@@ -42,6 +41,9 @@ class MlpModel(Model):
 class Policy(Model):
     def __init__(self, ob_space, ac_space, **kwargs):
         super().__init__(ob_space, ac_space, **kwargs)
+        # Try to make action probabilities as close as possible
+        nn.init.orthogonal_(self.layers[-1].weight, gain=1)
+        self.layers[-1].bias.data.mul_(0)
         self.distribution = make_pdtype(ac_space)
         
         if issubclass(self.distribution, Normal):

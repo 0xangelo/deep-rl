@@ -4,9 +4,13 @@ from proj.common import logger
 from proj.common.utils import SnapshotSaver
 from proj.common.env_makers import EnvMaker
 from proj.common.models import MlpPolicy, MlpBaseline
-from proj.vanilla import vanilla
-from sacred import Experiment
+from proj.common.tqdm_out import redirect
+from proj.algorithms import vanilla
+from sacred import SETTINGS, Experiment
+from sacred.observers import MongoObserver
+SETTINGS['CAPTURE_MODE']='no'
 ex = Experiment('vanilla-lunarlander')
+ex.observers.append(MongoObserver.create(db_name='pgtorch'))
 
 @ex.config
 def config():
@@ -21,7 +25,7 @@ def main(log_dir, n_iter, n_batch, n_envs, lr, _seed):
     torch.manual_seed(_seed)
     os.system("rm -rf {}".format(log_dir))
 
-    with logger.session(log_dir, format_strs=['log','json']):
+    with logger.session(log_dir), redirect():
         logger.set_level(logger.INFO)
         env_maker = EnvMaker('LunarLander-v2')
         env = env_maker.make()

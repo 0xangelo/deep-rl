@@ -19,11 +19,11 @@ class DummyTqdmFile(object):
 
 ORIG_STD_OUT_ERR = (sys.stdout, sys.stderr)
 
-def term():
+def std_out():
     return ORIG_STD_OUT_ERR[0]
 
 @contextlib.contextmanager
-def redirect():
+def tqdm_out():
     try:
         # sys.stdout = sys.stderr = DummyTqdmFile(orig_out_err[0])
         sys.stdout, sys.stderr = map(DummyTqdmFile, ORIG_STD_OUT_ERR)

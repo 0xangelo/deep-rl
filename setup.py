@@ -15,9 +15,9 @@ setup(name='proj',
           'click',
           'cloudpickle',
           'torch',
+          'torchvision',
           'sacred', # temporary
           'pymongo', # temporary
-          'torchvision',
           'opencv-python'
       ],
 )
