@@ -14,7 +14,7 @@ ex.observers.append(MongoObserver.create(db_name='pgtorch'))
 
 @ex.config
 def config():
-    log_dir = 'data/tnpg-mountaincar-continuous'
+    log_dir = 'data/'
     n_iter = 200
     n_batch = 8000
     n_envs = 16
@@ -25,10 +25,10 @@ def config():
 @ex.automain
 def main(log_dir, n_iter, n_batch, n_envs, step_size, kl_subsamp_ratio, interval, seed):
     torch.manual_seed(seed)
-    log_dir += '-' + str(seed) + '/'
+    log_dir += ex.path + '-' + str(seed) + '/'
     os.system("rm -rf {}".format(log_dir))
 
-    with tqdm_out(), logger.session(log_dir, format_strs=['stdout','json']):
+    with tqdm_out(), logger.session(log_dir):
         env_maker = EnvMaker('MountainCarContinuous-v0')
         env = env_maker.make()
         ob_space, ac_space = env.observation_space, env.action_space

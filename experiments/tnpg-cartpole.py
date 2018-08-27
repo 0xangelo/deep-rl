@@ -6,16 +6,15 @@ from proj.common.env_makers import EnvMaker
 from proj.common.models import MlpPolicy, MlpBaseline
 from proj.common.tqdm_util import tqdm_out
 from proj.algorithms import tnpg
-from sacred import Experiment
+from sacred import SETTINGS, Experiment
 from sacred.observers import MongoObserver
-from sacred import SETTINGS
 SETTINGS['CAPTURE_MODE']='no'
 ex = Experiment('tnpg-cartpole')
 ex.observers.append(MongoObserver.create(db_name='pgtorch'))
 
 @ex.config
 def config():
-    log_dir = 'data/tnpg-cartpole'
+    log_dir = 'data/'
     n_iter = 100
     n_batch = 2000
     n_envs = 4
@@ -26,7 +25,7 @@ def config():
 @ex.automain
 def main(log_dir, n_iter, n_batch, n_envs, step_size, kl_subsamp_ratio, interval, seed):
     torch.manual_seed(seed)
-    log_dir += '-' + str(seed) + '/'
+    log_dir += ex.path + '-' + str(seed) + '/'
     os.system("rm -rf {}".format(log_dir))
 
     with tqdm_out(), logger.session(log_dir):

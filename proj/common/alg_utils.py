@@ -9,10 +9,10 @@ def compute_cumulative_returns(rewards, baselines, discount):
     # This method builds up the cumulative sum of discounted rewards for each time step:
     # R[t] = sum_{t'>=t} γ^(t'-t)*r_t'
     # Note that we use γ^(t'-t) instead of γ^t'. This gives us a biased gradient but lower variance
-    returns = np.empty_like(rewards)
+    returns = torch.empty_like(rewards)
     # Use the last baseline prediction to back up
     cum_return = baselines[-1]
-    for idx in range(len(rewards)-1,-1,-1):
+    for idx in reversed(range(len(rewards))):
         returns[idx] = cum_return = cum_return * discount + rewards[idx]
     return returns
 
@@ -20,10 +20,10 @@ def compute_cumulative_returns(rewards, baselines, discount):
 def compute_advantages(rewards, baselines, discount, gae_lambda):
     # Given returns R_t and baselines b(s_t), compute (generalized) advantage estimate A_t
     deltas = rewards + discount * baselines[1:] - baselines[:-1]
-    advs = np.empty_like(deltas)
+    advs = torch.empty_like(deltas)
     cum_adv = 0
     multiplier = discount * gae_lambda
-    for idx in range(len(deltas)-1,-1,-1):
+    for idx in reversed(range(len(deltas))):
         advs[idx] = cum_adv = cum_adv * multiplier + deltas[idx]
     return advs
 
@@ -34,8 +34,9 @@ def compute_pg_vars(trajs, policy, baseline, discount, gae_lambda):
     """
     for traj in trajs:
         # Include the last observation here, in case the trajectory is not finished
-        baselines = baseline.predict(np.concatenate(
-            [traj["observations"], [traj["last_observation"]]]))
+        with torch.no_grad():
+            baselines = baseline(torch.cat(
+                [traj["observations"], traj["last_observation"].unsqueeze(0)]))
         if traj['finished']:
             # If already finished, the future cumulative rewards starting from the final state is 0
             baselines[-1] = 0.
@@ -48,18 +49,15 @@ def compute_pg_vars(trajs, policy, baseline, discount, gae_lambda):
         traj['baselines'] = baselines[:-1]
 
     # First, we compute a flattened list of observations, actions, and advantages
-    all_obs = np.concatenate([traj['observations'] for traj in trajs], axis=0)
-    all_acts = np.concatenate([traj['actions'] for traj in trajs], axis=0)
-    all_advs = np.concatenate([traj['advantages'] for traj in trajs], axis=0)
-    all_dists = np.concatenate([traj['distributions'] for traj in trajs], axis=0)
+    all_obs = torch.cat([traj['observations'] for traj in trajs])
+    all_acts = torch.cat([traj['actions'] for traj in trajs])
+    all_advs = torch.cat([traj['advantages'] for traj in trajs])
+    all_feats = torch.cat([traj['features'] for traj in trajs])
 
     # Normalizing the advantage values can make the algorithm more robust to reward scaling
-    all_advs = (all_advs - np.mean(all_advs)) / (np.std(all_advs) + 1e-8)
+    all_advs = (all_advs - all_advs.mean()) / (all_advs.std() + 1e-8)
 
-    all_obs = policy.process_obs(all_obs)
-    all_acts = torch.as_tensor(all_acts)
-    all_advs = torch.as_tensor(all_advs)
-    all_dists = policy.distribution.fromflat(torch.as_tensor(all_dists))
+    all_dists = policy.distribution(all_feats)
 
     return all_obs, all_acts, all_advs, all_dists
 
@@ -74,8 +72,8 @@ def log_reward_statistics(env):
         if not isinstance(env, gym.Wrapper):
             assert False
         env = env.env
-    # env.unwrapped
     assert isinstance(env, gym.wrappers.Monitor)
+
     all_stats = None
     for _ in range(10):
         try:
@@ -107,23 +105,23 @@ def log_reward_statistics(env):
 
 def log_baseline_statistics(trajs):
     # Specifically, compute the explained variance, defined as
-    baselines = np.concatenate([traj['baselines'] for traj in trajs])
-    returns = np.concatenate([traj['returns'] for traj in trajs])
+    baselines = torch.cat([traj['baselines'] for traj in trajs])
+    returns = torch.cat([traj['returns'] for traj in trajs])
     logger.logkv('ExplainedVariance',
                  explained_variance_1d(baselines, returns))
 
 
 @torch.no_grad()
 def log_action_distribution_statistics(dists):
-    logger.logkv('Entropy', torch.mean(dists.entropy()).numpy())
-    logger.logkv('Perplexity', torch.mean(dists.perplexity()).numpy())
+    logger.logkv('Entropy', torch.mean(dists.entropy()).item())
+    logger.logkv('Perplexity', torch.mean(dists.perplexity()).item())
     if isinstance(dists, Normal):
-        logger.logkv('AveragePolicyStd', torch.mean(dists.stddev).numpy())
+        logger.logkv('AveragePolicyStd', torch.mean(dists.stddev).item())
         for idx in range(dists.stddev.shape[-1]):
             logger.logkv('AveragePolicyStd[{}]'.format(idx),
-                          torch.mean(dists.stddev[...,idx]).numpy())
+                          torch.mean(dists.stddev[...,idx]).item())
     elif isinstance(dists, Categorical):
-        probs = torch.mean(torch.softmax(dists.logits, dim=1), dim=0).numpy()
-        for idx in range(probs.size):
-            logger.logkv('AveragePolicyProb[{}]'.format(idx), probs[idx])
+        probs = torch.mean(torch.softmax(dists.logits, dim=1), dim=0)
+        for idx in range(probs.numel()):
+            logger.logkv('AveragePolicyProb[{}]'.format(idx), probs[idx].item())
 

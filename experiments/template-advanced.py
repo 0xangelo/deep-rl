@@ -14,18 +14,18 @@ ex.observers.append(MongoObserver.create(db_name='pgtorch'))
 
 @ex.config
 def config():
-    log_dir = 'data/EXPERIMENT' #Replace with target dir
+    log_dir = 'data/'
     n_iter = 0#
     n_batch = 0#
     n_envs = 0#
     step_size = 0#
     kl_subsamp_ratio = 0#
-    interval = 1#
+    interval = 10#
 
 @ex.automain
 def main(log_dir, n_iter, n_batch, n_envs, kl_subsamp_ration, interval, seed):
     torch.manual_seed(seed)
-    log_dir += '-' + str(seed) + '/'
+    log_dir += ex.path + '-' + str(seed) + '/'
     os.system("rm -rf {}".format(log_dir))
 
     with tqdm_out(), logger.session(log_dir):

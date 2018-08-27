@@ -15,7 +15,8 @@ from proj.common import logger
 from proj.common.tqdm_util import std_out
 
 tblib.pickling_support.install()
-
+# torch.set_num_threads(mp.cpu_count())
+# torch.set_num_threads(1)
 
 def set_global_seeds(i):
     np.random.seed(i)
@@ -32,38 +33,21 @@ def flatten_dim(space):
         assert False
 
 
-def get_flat_params(model):
-    flat_params = []
-    for param in model.parameters():
-        flat_params.append(param.view(-1).detach().numpy())
-    return np.concatenate(flat_params)
-
-
-def set_flat_params(model, flat_params):
-    offset = 0
-    flat_params = torch.tensor(flat_params)
-    for param in model.parameters():
-        param.detach().copy_(
-            flat_params[offset:offset + param.numel()].view(param.size())
-        )
-        offset += param.numel()
-
-
 def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
     """
     Demmel p 312. Approximately solve x = A^{-1}b, or Ax = b, where we only have access to f: x -> Ax
     """
-    p = b.copy()
-    r = b.copy()
-    x = np.zeros_like(b)
-    rdotr = r.dot(r)
+    p = b.clone()
+    r = b.clone()
+    x = torch.zeros_like(b)
+    rdotr = torch.dot(r,r)
 
     for i in range(cg_iters):
         z = f_Ax(p)
-        v = rdotr / p.dot(z)
+        v = rdotr / torch.dot(p,z)
         x += v * p
         r -= v * z
-        newrdotr = r.dot(r)
+        newrdotr = torch.dot(r,r)
         mu = newrdotr / rdotr
         p = r + mu * p
         rdotr = newrdotr
@@ -74,14 +58,14 @@ def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
 
 
 def explained_variance_1d(ypred, y):
-    assert y.ndim == 1 and ypred.ndim == 1
-    vary = np.var(y)
+    assert y.dim() == 1 and ypred.dim() == 1
+    vary = y.var().item()
     if np.isclose(vary, 0):
-        if np.var(ypred) > 1e-8:
+        if ypred.var().item() > 1e-8:
             return 0
         else:
             return 1
-    return 1 - np.var(y - ypred) / (vary + 1e-8)
+    return 1 - torch.var(y - ypred).item() / (vary + 1e-8)
 
 
 # ==============================
@@ -253,11 +237,11 @@ class EnvPool(object):
 def _cast_and_add(trajs, traj):
     trajs.append(
         dict(
-            observations=np.asarray(traj["observations"]),
-            actions=np.asarray(traj["actions"]),
-            rewards=np.asarray(traj["rewards"], dtype=np.float32),
-            distributions=np.asarray(traj["distributions"]),
-            last_observation=traj["last_observation"],
+            observations=torch.Tensor(traj["observations"]),
+            actions=torch.stack(traj["actions"]),
+            rewards=torch.Tensor(traj["rewards"]),
+            features=torch.stack(traj["features"]),
+            last_observation=torch.Tensor(traj["last_observation"]),
             finished=traj["finished"],
         )
     )
@@ -287,21 +271,21 @@ def parallel_collect_samples(env_pool, policy, num_samples):
 
     for _ in trange(0, num_samples, env_pool.n_envs, desc="Sampling",
                     unit="step", leave=False, file=std_out(), dynamic_ncols=True):
-        actions, dists = policy.get_actions(obs)
-        next_obs, rews, dones, infos = env_pool.step(actions)
+        actions, feats = policy.get_actions(obs)
+        next_obs, rews, dones, infos = env_pool.step(actions.numpy())
         for idx in range(env_pool.n_envs):
             if partial_trajs[idx] is None:
                 partial_trajs[idx] = dict(
                     observations=[],
                     actions=[],
                     rewards=[],
-                    distributions=[],
+                    features=[],
                 )
             traj = partial_trajs[idx]
             traj["observations"].append(obs[idx])
             traj["actions"].append(actions[idx])
             traj["rewards"].append(rews[idx])
-            traj["distributions"].append(dists[idx])
+            traj["features"].append(feats[idx])
             if dones[idx]:
                 traj["last_observation"] = infos[idx]["last_observation"]
                 traj["finished"] = True

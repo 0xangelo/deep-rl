@@ -4,21 +4,20 @@ import torch.distributions as dist
 
 
 class Normal(dist.Normal):
-    def flatparam(self):
-        return torch.cat((self.loc, self.scale), dim=1).numpy()
-
-    @classmethod
-    def fromflat(cls, flatparam):
+    def __init__(self, flatparam):
         loc, scale = torch.chunk(flatparam, 2, dim=1)
-        return cls(loc=loc, scale=scale)
+        super().__init__(loc=loc, scale=scale)
+        
+    def flatparam(self):
+        return torch.cat((self.loc, self.scale), dim=1)
+
 
 class Categorical(dist.Categorical):
-    def flatparam(self):
-        return self.logits.numpy()
+    def __init__(self, flatparam):
+        super().__init__(logits=flatparam)
 
-    @classmethod
-    def fromflat(cls, flatparam):
-        return cls(logits=flatparam)
+    def flatparam(self):
+        return self.logits
 
 
 def make_pdtype(ac_space):

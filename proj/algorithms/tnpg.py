@@ -1,4 +1,5 @@
 import torch
+from torch.utils.data import TensorDataset, Subset, DataLoader
 from torch.autograd import grad
 from torch.distributions.kl import kl_divergence as kl
 from proj.common.alg_utils import *
@@ -21,40 +22,31 @@ def tnpg(env, env_maker, policy, baseline, n_iter=100, n_batch=2000, n_envs=mp.c
                 trajs, policy, baseline, gamma, gae_lambda
             )
 
-            # subsample for kl divergence computation
-            # mask = np.zeros(len(all_obs), dtype=np.bool)
-            # mask_ids = np.random.choice(len(all_obs), size=int(
-            #     np.ceil(len(all_obs) * kl_subsamp_ratio)), replace=False)
-            # mask[mask_ids] = 1
-            # if kl_subsamp_ratio < 1:
-            #     subsamp_obs = all_obs[idx]
-            #     subsamp_dists = all_dists[idx]
-            # else:
-            subsamp_obs = all_obs
-            subsamp_dists = all_dists
-
             logger.info("Computing policy gradient")
-            surr_loss = -(policy(all_obs).log_prob(all_acts) * all_advs).mean()
-            # pol_grad = grad(surr_loss, policy.parameters())
-            # pol_grad = torch.cat([g.view(-1) for g in pol_grad]).numpy()
-
+            policy.zero_grad()
+            surr_loss = -(policy.dists(all_obs).log_prob(all_acts) * all_advs).mean()
+            surr_loss.backward()
+            pol_grad = torch.cat([p.grad.view(-1) for p in policy.parameters()])
+            
             logger.info("Computing truncated natural gradient")
-            avg_kl = lambda: kl(subsamp_dists, policy(subsamp_obs)).mean()
+            avg_kl = lambda: kl(all_dists, policy.dists(all_obs)).mean()
             def F_0(v):
+                policy.zero_grad()
                 grads = grad(avg_kl(), policy.parameters(), create_graph=True)
                 flat_grads = torch.cat([grad.view(-1) for grad in grads])
-                grad_vec_prod = torch.sum(flat_grads * torch.tensor(v))
+                grad_vec_prod = torch.sum(flat_grads * v)
                 fvp = grad(grad_vec_prod, policy.parameters())
                 flat_fvp = torch.cat([g.contiguous().view(-1) for g in fvp])
-                return flat_fvp.numpy() + v * 1e-2
+                return flat_fvp + v * 1e-3
 
             descent_direction = conjugate_gradient(F_0, pol_grad)
-            scale = np.sqrt(
+            scale = torch.sqrt(
                 2.0 * step_size *
-                (1. / (descent_direction.dot(F_0(descent_direction))) + 1e-8)
+                (1. / (torch.dot(descent_direction, F_0(descent_direction))) + 1e-8)
             )
             descent_step = descent_direction * scale
-            set_flat_params(policy, get_flat_params(policy) - descent_step)
+            flat_params = torch.nn.utils.parameters_to_vector(policy.parameters())
+            torch.nn.utils.vector_to_parameters(flat_params - descent_step, policy.parameters())
 
             logger.info("Updating baseline")
             baseline.update(trajs)

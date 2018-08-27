@@ -1,3 +1,4 @@
+import torch
 import click
 import time
 from proj.common.utils import SnapshotSaver
@@ -22,8 +23,9 @@ def main(dir, index):
         ob = env.reset()
         done = False
         while not done:
-            action, _ = policy.get_action(ob)
-            ob, rew, done, _ = env.step(action)
+            with torch.no_grad():
+                action = policy(torch.Tensor(ob).unsqueeze(0)).sample()[0]
+            ob, rew, done, _ = env.step(action.numpy())
             env.render()
             rewards += rew
         print(rewards)
