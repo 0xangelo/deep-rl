@@ -1,16 +1,28 @@
 #!/usr/bin/env python
 
 """
-This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the Berkeley Deep RL Bootcamp, August 2017. Bootcamp website with slides and lecture videos: https://sites.google.com/view/deep-rl-bootcamp/.
+This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the 
+Berkeley Deep RL Bootcamp, August 2017. Bootcamp website with slides and lecture
+videos: https://sites.google.com/view/deep-rl-bootcamp/.
 
 Copyright 2017 Deep RL Bootcamp Organizers.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy of 
+this software and associated documentation files (the "Software"), to deal in 
+the Software without restriction, including without limitation the rights to 
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so, 
+subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in all 
+copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+ FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR 
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN 
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 
@@ -145,7 +157,8 @@ def summary_name(exp, selector=None):
 
 
 def check_nan(exp):
-    return all(not np.any(np.isnan(vals)) for vals in list(exp.progress.values()))
+    return all(
+        not np.any(np.isnan(vals)) for vals in list(exp.progress.values()))
 
 
 def get_plot_instruction(
@@ -194,12 +207,15 @@ def get_plot_instruction(
             if len(filtered_data) > 0:
 
                 progresses = [
-                    exp.progress.get(plot_key, np.array([np.nan])) for exp in filtered_data]
+                    exp.progress.get(plot_key, np.array([np.nan]))
+                    for exp in filtered_data
+                ]
                 sizes = list(map(len, progresses))
                 # more intelligent:
                 max_size = max(sizes)
                 progresses = [
-                    np.concatenate([ps, np.ones(max_size - len(ps)) * np.nan]) for ps in progresses
+                    np.concatenate([ps, np.ones(max_size - len(ps)) * np.nan])
+                    for ps in progresses
                 ]
 
                 if x_plot_key == "(default)":
@@ -209,7 +225,8 @@ def get_plot_instruction(
                     # ideally, it should be the union of
 
                     all_xs = np.unique(np.sort(np.concatenate(
-                        [d.progress.get(x_plot_key, []) for d in filtered_data])))
+                        [d.progress.get(x_plot_key, [])
+                         for d in filtered_data])))
                     interp_progresses = []
 
                     for d in filtered_data:
@@ -334,7 +351,8 @@ def index():
         group_key = None
     print("Getting plot instruction...")
     plot_div = get_plot_instruction(
-        x_plot_key="(default)", plot_key=plot_key, display_mode="mean_std", split_key=None, group_key=group_key)
+        x_plot_key="(default)", plot_key=plot_key, display_mode="mean_std",
+        split_key=None, group_key=group_key)
     print("Rendering...")
     rendered = flask.render_template(
         "main.html",

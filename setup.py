@@ -6,7 +6,6 @@ setup(name='proj',
       install_requires=[
           'gym[atari,box2d,classic_control]',
           'numpy',
-          'scipy',
           'python-dateutil',
           'tqdm',
           'flask',
@@ -15,9 +14,6 @@ setup(name='proj',
           'click',
           'cloudpickle',
           'torch',
-          'torchvision',
-          'sacred', # temporary
-          'pymongo', # temporary
           'opencv-python'
       ],
 )

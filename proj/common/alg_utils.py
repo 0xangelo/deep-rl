@@ -1,4 +1,12 @@
-from proj.common.utils import *
+import gym
+import torch
+import numpy as np
+from tqdm import trange
+import multiprocessing as mp
+from proj.common import logger
+from proj.common.utils import explained_variance_1d
+from proj.common.tqdm_util import std_out
+from proj.common.env_pool import EnvPool, parallel_collect_samples
 from proj.common.distributions import Normal, Categorical
 
 # ==============================
@@ -6,26 +14,33 @@ from proj.common.distributions import Normal, Categorical
 # ==============================
 
 def compute_cumulative_returns(rewards, baselines, discount):
-    # This method builds up the cumulative sum of discounted rewards for each time step:
-    # R[t] = sum_{t'>=t} γ^(t'-t)*r_t'
-    # Note that we use γ^(t'-t) instead of γ^t'. This gives us a biased gradient but lower variance
-    returns = torch.empty_like(rewards)
+    """
+    Builds up the cumulative sum of discounted rewards for each time step:
+    R[t] = sum_{t'>=t} γ^(t'-t)*r_t'
+    Note that we use γ^(t'-t) instead of γ^t'. This gives us a biased gradient 
+    but lower variance.
+    """
+    rews = rewards.cpu()
+    returns = torch.empty_like(rews)
     # Use the last baseline prediction to back up
-    cum_return = baselines[-1]
-    for idx in reversed(range(len(rewards))):
-        returns[idx] = cum_return = cum_return * discount + rewards[idx]
-    return returns
+    cum_return = baselines[-1].cpu()
+    for idx in reversed(range(len(rews))):
+        returns[idx] = cum_return = cum_return * discount + rews[idx]
+    return returns.to(rewards)
 
 
 def compute_advantages(rewards, baselines, discount, gae_lambda):
-    # Given returns R_t and baselines b(s_t), compute (generalized) advantage estimate A_t
-    deltas = rewards + discount * baselines[1:] - baselines[:-1]
+    """
+    Given returns R_t and baselines b(s_t), compute (generalized) advantage 
+    estimate A_t.
+    """
+    deltas = (rewards + discount * baselines[1:] - baselines[:-1]).cpu()
     advs = torch.empty_like(deltas)
     cum_adv = 0
     multiplier = discount * gae_lambda
     for idx in reversed(range(len(deltas))):
         advs[idx] = cum_adv = cum_adv * multiplier + deltas[idx]
-    return advs
+    return advs.to(rewards)
 
 
 def compute_pg_vars(trajs, policy, baseline, discount, gae_lambda):
@@ -33,31 +48,33 @@ def compute_pg_vars(trajs, policy, baseline, discount, gae_lambda):
     Compute variables needed for various policy gradient algorithms
     """
     for traj in trajs:
-        # Include the last observation here, in case the trajectory is not finished
+        # Include the last observation here, if the trajectory is not finished
         with torch.no_grad():
             baselines = baseline(torch.cat(
                 [traj["observations"], traj["last_observation"].unsqueeze(0)]))
         if traj['finished']:
-            # If already finished, the future cumulative rewards starting from the final state is 0
+            # If already finished, the future cumulative rewards starting from
+            # the final state is 0
             baselines[-1] = 0.
-        # This is useful when fitting baselines. It uses the baseline prediction of the last state value to perform
-        # Bellman backup if the trajectory is not finished.
+        # This is useful when fitting baselines. It uses the baseline prediction
+        # of the last state value to perform Bellman backup if the trajectory is
+        # not finished.
         traj['returns'] = compute_cumulative_returns(
             traj['rewards'], baselines, discount)
         traj['advantages'] = compute_advantages(
             traj['rewards'], baselines, discount, gae_lambda)
         traj['baselines'] = baselines[:-1]
 
-    # First, we compute a flattened list of observations, actions, and advantages
+    # First, we compute a flattened list of observations, actions, advantages
     all_obs = torch.cat([traj['observations'] for traj in trajs])
     all_acts = torch.cat([traj['actions'] for traj in trajs])
     all_advs = torch.cat([traj['advantages'] for traj in trajs])
-    all_feats = torch.cat([traj['features'] for traj in trajs])
+    with torch.no_grad():
+        all_dists = policy.dists(all_obs)
 
-    # Normalizing the advantage values can make the algorithm more robust to reward scaling
+    # Normalizing the advantage values can make the algorithm more robust to
+    # reward scaling
     all_advs = (all_advs - all_advs.mean()) / (all_advs.std() + 1e-8)
-
-    all_dists = policy.distribution(all_feats)
 
     return all_obs, all_acts, all_advs, all_dists
 
@@ -111,7 +128,6 @@ def log_baseline_statistics(trajs):
                  explained_variance_1d(baselines, returns))
 
 
-@torch.no_grad()
 def log_action_distribution_statistics(dists):
     logger.logkv('Entropy', torch.mean(dists.entropy()).item())
     logger.logkv('Perplexity', torch.mean(dists.perplexity()).item())

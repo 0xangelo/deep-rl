@@ -1,7 +1,17 @@
 import torch
+import numpy as np
 from gym.spaces import Discrete, Box
 
-def observation_input(ob_space):
+def n_features(space):
+    if isinstance(space, Box):
+        return np.prod(space.shape)
+    elif isinstance(space, Discrete):
+        return space.n
+    else:
+        raise ValueError("{} is not a valid space type".format(str(space)))
+
+
+def obs_to_tensor(ob_space):
     '''
     Defines closure for building observation input with encoding 
     depending on the observation space type
@@ -11,16 +21,16 @@ def observation_input(ob_space):
 
     returns: function mapping observations to tensors
     '''
-    # if isinstance(ob_space, Discrete):
-    #     def obs_inpt(obs):
-    #         obs = torch.as_tensor(obs, dtype=torch.int32)
-    #         zeros = torch.zeros(ob_space.n + obs.shape)[obs] = 1
-    #         return obs
-    #     return obs_inpt
-    if isinstance(ob_space, Box):
-        def obs_inpt(obs):
-            return torch.as_tensor(obs, dtype=torch.float32)
-        return obs_inpt
+    if isinstance(ob_space, Discrete):
+        num_classes = ob_space.n
+        def process(obs):
+            obs = torch.tensor(obs).reshape(-1, 1)
+            return (
+                obs == torch.arange(num_classes).reshape(1,num_classes).float()
+            )
+        return process
+    elif isinstance(ob_space, Box):
+        return torch.Tensor
     else:
-        raise NotImplementedError
+        raise ValueError("{} is not a valid space type".format(str(ob_space)))
 

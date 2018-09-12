@@ -1,20 +1,19 @@
-import torch
-from torch.utils.data import TensorDataset, Subset, DataLoader
-from tqdm import trange
 from proj.common.alg_utils import *
 
-def vanilla(env, env_maker, policy, baseline, n_iter=100, n_batch=2000, n_envs=mp.cpu_count(),
-            optimizer=None, last_iter=-1, gamma=0.99, gae_lambda=0.97, snapshot_saver=None):
+
+def vanilla(env, env_maker, policy, baseline, n_iter=100, n_batch=2000,
+            n_envs=mp.cpu_count(), optimizer=None, last_iter=-1, gamma=0.99,
+            gae_lambda=0.97, snapshot_saver=None):
 
     if optimizer is None:
         optimizer = torch.optim.Adam(policy.parameters())
 
     # Algorithm main loop
     with EnvPool(env_maker, n_envs=n_envs) as env_pool:
-        for iter in trange(last_iter + 1, n_iter, desc="Training",
+        for updt in trange(last_iter + 1, n_iter, desc="Training",
                            unit="updt", file=std_out(), dynamic_ncols=True):
-            logger.info("Starting iteration {}".format(iter))
-            logger.logkv("Iteration", iter)
+            logger.info("Starting iteration {}".format(updt))
+            logger.logkv("Iteration", updt)
             
             logger.info("Start collecting samples")
             trajs = parallel_collect_samples(env_pool, policy, n_batch)
@@ -26,7 +25,8 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_batch=2000, n_envs=m
 
             logger.info("Applying policy gradient")
             optimizer.zero_grad()
-            surr_loss = -(policy.dists(all_obs).log_prob(all_acts) * all_advs).mean()
+            surr_loss = - torch.mean(
+                policy.dists(all_obs).log_prob(all_acts) * all_advs)
             surr_loss.backward()
             optimizer.step()
 
@@ -43,7 +43,7 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_batch=2000, n_envs=m
             if snapshot_saver is not None:
                 logger.info("Saving snapshot")
                 snapshot_saver.save_state(
-                    iter,
+                    updt,
                     dict(
                         alg=vanilla,
                         alg_state=dict(

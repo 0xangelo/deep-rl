@@ -1,14 +1,26 @@
 """
-This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the Berkeley Deep RL Bootcamp, August 2017. Bootcamp website with slides and lecture videos: https://sites.google.com/view/deep-rl-bootcamp/.
+This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the 
+Berkeley Deep RL Bootcamp, August 2017. Bootcamp website with slides and lecture
+videos: https://sites.google.com/view/deep-rl-bootcamp/.
 
 Copyright 2017 Deep RL Bootcamp Organizers.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy of 
+this software and associated documentation files (the "Software"), to deal in 
+the Software without restriction, including without limitation the rights to 
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so, 
+subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in all 
+copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR 
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN 
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 
@@ -42,8 +54,8 @@ class EnvMaker(object):
             monitor_dir = "/tmp/gym-monitoring"
             resume = False
             force = True
-        env = gym.wrappers.Monitor(env, directory=monitor_dir, video_callable=False, force=force, resume=resume,
-                                   write_upon_reset=False)
+        env = gym.wrappers.Monitor(env, directory=monitor_dir, force=force,
+                                   resume=resume, video_callable=False)
         if isinstance(env.unwrapped, AtariEnv):
             if '-ram-' in self.env_id:
                 assert 'NoFrameskip' not in self.env_id
@@ -103,7 +115,9 @@ class NormalizeActionWrapper(gym.Wrapper):
 
 class FireResetEnv(gym.Wrapper):
     def __init__(self, env=None):
-        """For environments where the user need to press FIRE for the game to start."""
+        """
+        For environments where the user need to press FIRE for the game to start.
+        """
         super(FireResetEnv, self).__init__(env)
         assert env.unwrapped.get_action_meanings()[1] == 'FIRE'
         assert len(env.unwrapped.get_action_meanings()) >= 3
@@ -216,19 +230,24 @@ class ProcessFrame84(gym.ObservationWrapper):
 
 class ClippedRewardsWrapper(gym.RewardWrapper):
     def _reward(self, reward):
-        """Change all the positive rewards to 1, negative to -1 and keep zero."""
+        """
+        Change all the positive rewards to 1, negative to -1 and keep zero.
+        """
         return np.sign(reward)
 
 
 class LazyFrames(object):
     def __init__(self, frames):
-        """This object ensures that common frames between the observations are only stored once.
-        It exists purely to optimize memory usage which can be huge for DQN's 1M frames replay
-        buffers.
+        """
+        This object ensures that common frames between the observations are only
+        stored once. It exists purely to optimize memory usage which can be huge
+        for DQN's 1M frames replay buffers.
 
-        This object should only be converted to numpy array before being passed to the model.
+        This object should only be converted to numpy array before being passed 
+        to the model.
 
-        You'd not belive how complex the previous solution was."""
+        You'd not belive how complex the previous solution was.
+        """
         self._frames = frames
 
     def __array__(self, dtype=None):

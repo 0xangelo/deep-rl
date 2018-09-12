@@ -1,13 +1,26 @@
 """
-This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the Berkeley Deep RL Bootcamp, August 2017. Bootcamp website with slides and lecture videos: https://sites.google.com/view/deep-rl-bootcamp/.
+This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the 
+Berkeley Deep RL Bootcamp, August 2017. Bootcamp website with slides and lecture
+ videos: https://sites.google.com/view/deep-rl-bootcamp/.
 
 Copyright 2017 Deep RL Bootcamp Organizers.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy of 
+this software and associated documentation files (the "Software"), to deal in 
+the Software without restriction, including without limitation the rights to 
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in all 
+copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR 
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN 
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 
@@ -58,19 +71,6 @@ def load_progress(progress_json_path, verbose=True):
             else:
                 entries[k].append(np.nan)
 
-        # entries[key] = [row.get(key, np.nan) for row in rows]
-        #         added_keys = set()
-        #         for k, v in row.items():
-        #             if k not in entries:
-        #                 entries[k] = []
-        #             try:
-        #                 entries[k].append(float(v))
-        #             except:
-        #                 entries[k].append(0.)
-        #             added_keys.add(k)
-        #         for k in entries.keys():
-        #             if k not in added_keys:
-        #                 entries[k].append(np.nan)
     entries = dict([(k, np.array(v)) for k, v in entries.items()])
     return entries
 
@@ -131,7 +131,10 @@ def load_exps_data(exp_folder_paths, ignore_missing_keys=False, verbose=True):
             except IOError:
                 params = dict(exp_name="experiment")
             exps_data.append(AttrDict(
-                progress=progress, params=params, flat_params=flatten_dict(params)))
+                progress=progress,
+                params=params,
+                flat_params=flatten_dict(params)
+            ))
         except IOError as e:
             if verbose:
                 print(e)
@@ -167,12 +170,15 @@ def smart_repr(x):
             return "(" + ",".join(map(smart_repr, x)) + ")"
     else:
         if hasattr(x, "__call__"):
-            return "__import__('pydoc').locate('%s')" % (x.__module__ + "." + x.__name__)
+            return "__import__('pydoc').locate('%s')" % \
+                (x.__module__ + "." + x.__name__)
         else:
             return repr(x)
 
 
-def extract_distinct_params(exps_data, excluded_params=('exp_name', 'seed', 'log_dir'), l=1):
+def extract_distinct_params(exps_data,
+                            excluded_params=('exp_name', 'seed', 'log_dir'),
+                            l=1):
     try:
         stringified_pairs = sorted(
             map(
@@ -199,8 +205,10 @@ def extract_distinct_params(exps_data, excluded_params=('exp_name', 'seed', 'log
         print(e)
         import ipdb
         ipdb.set_trace()
-    proposals = [(k, [x[1] for x in v])
-                 for k, v in itertools.groupby(stringified_pairs, lambda x: x[0])]
+    proposals = [
+        (k, [x[1] for x in v])
+        for k, v in itertools.groupby(stringified_pairs, lambda x: x[0])
+    ]
     filtered = [(k, v) for (k, v) in proposals if len(v) > l and all(
         [k.find(excluded_param) != 0 for excluded_param in excluded_params])]
     return filtered
@@ -219,10 +227,12 @@ class Selector(object):
             self._custom_filters = custom_filters
 
     def where(self, k, v):
-        return Selector(self._exps_data, self._filters + ((k, v),), self._custom_filters)
+        return Selector(
+            self._exps_data, self._filters + ((k, v),), self._custom_filters)
 
     def custom_filter(self, filter):
-        return Selector(self._exps_data, self._filters, self._custom_filters + [filter])
+        return Selector(
+            self._exps_data, self._filters, self._custom_filters + [filter])
 
     def _check_exp(self, exp):
         # or exp.flat_params.get(k, None) is None
@@ -257,4 +267,5 @@ def hex_to_rgb(hex, opacity=1.0):
     if hex[0] == '#':
         hex = hex[1:]
     assert (len(hex) == 6)
-    return "rgba({0},{1},{2},{3})".format(int(hex[:2], 16), int(hex[2:4], 16), int(hex[4:6], 16), opacity)
+    return "rgba({0},{1},{2},{3})".format(
+        int(hex[:2], 16), int(hex[2:4], 16), int(hex[4:6], 16), opacity)

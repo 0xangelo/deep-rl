@@ -1,15 +1,28 @@
 """
-This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the Berkeley Deep RL Bootcamp, August 2017. Bootcamp website with slides and lecture videos: https://sites.google.com/view/deep-rl-bootcamp/.
+This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the 
+Berkeley Deep RL Bootcamp, August 2017. Bootcamp website with slides and lecture
+videos: https://sites.google.com/view/deep-rl-bootcamp/.
 
 Code adapted from OpenAI Baselines: https://github.com/openai/baselines
 
 Copyright 2017 Deep RL Bootcamp Organizers.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy of 
+this software and associated documentation files (the "Software"), to deal in 
+the Software without restriction, including without limitation the rights to 
+use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software is furnished to do so,
+subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+The above copyright notice and this permission notice shall be included in all 
+copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR 
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN 
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 
@@ -135,20 +148,16 @@ def dumpkvs():
     """
     Write all of the diagnostics from the current iteration
 
-    level: int. (see old_logger.py docs) If the global logger level is higher than
-                the level argument here, don't print to stdout.
+    level: int. (see old_logger.py docs) If the global logger level is higher 
+                than the level argument here, don't print to stdout.
     """
     Logger.CURRENT.dumpkvs()
 
 
-# for backwards compatibility
-record_tabular = logkv
-dump_tabular = dumpkvs
-
-
 def log(*args, level=INFO):
     """
-    Write the sequence of args, with no separators, to the console and output files (if you've configured an output file).
+    Write the sequence of args, with no separators, to the console and output 
+    files (if you've configured an output file).
     """
     Logger.CURRENT.log(*args, level=level)
 
@@ -185,16 +194,10 @@ def get_level():
 
 def get_dir():
     """
-    Get directory that log files are being written to.
-    will be None if there is no output directory (i.e., if you didn't call start)
+    Get directory that log files are being written to. Will be None if there is 
+    no output directory (i.e., if you didn't call start).
     """
     return Logger.CURRENT.get_dir()
-
-
-def get_expt_dir():
-    sys.stderr.write(
-        "get_expt_dir() is Deprecated. Switch to get_dir() [%s]\n" % (get_dir(),))
-    return get_dir()
 
 
 # ================================================================
@@ -260,8 +263,8 @@ class session(object):
     """
     Context manager that sets up the loggers for an experiment.
     """
-
-    CURRENT = None  # Set to a LoggerContext object using enter/exit or context manager
+    # Set to a LoggerContext object using enter/exit or context manager
+    CURRENT = None  
 
     def __init__(self, dir, format_strs=None):
         self.dir = dir

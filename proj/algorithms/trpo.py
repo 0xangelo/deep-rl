@@ -1,24 +1,50 @@
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from torch.autograd import grad
 from torch.distributions.kl import kl_divergence as kl
 from proj.common.utils import conjugate_gradient
+from torch.autograd import grad
 from proj.common.alg_utils import *
 
 
-def line_search(f, x0, ):
+def line_search(f, x0, dx, expected_improvement, y0=None, accept_ratio=0.1,
+                backtrack_ratio=0.8, max_backtracks=15, atol=1e-7):
     
-    return scale
+    if expected_improvement < atol:
+        logger.logkv("ExpectedImprovement", expected_improvement)
+        logger.logkv("ActualImprovement", 0.)
+        logger.logkv("ImprovementRatio", 0.)
+        return x0
 
-def tnpg(env, env_maker, policy, baseline, n_iter=100, n_batch=2000,
+    if y0 is None:
+        y0 = f(x0)
+    for exp in range(max_backtracks):
+        ratio = backtrack_ratio ** exp
+        x = x0 - ratio * dx
+        y = f(x)
+        actual_improvement = y0 - y
+        # Armijo condition
+        if actual_improvement / (expected_improvement * ratio) >= accept_ratio:
+            logger.logkv("ExpectedImprovement", expected_improvement * ratio)
+            logger.logkv("ActualImprovement", actual_improvement)
+            logger.logkv("ImprovementRatio", actual_improvement /
+                         (expected_improvement * ratio))
+            return x
+
+    logger.logkv("ExpectedImprovement", expected_improvement)
+    logger.logkv("ActualImprovement", 0.)
+    logger.logkv("ImprovementRatio", 0.)
+    return x0
+
+
+def trpo(env, env_maker, policy, baseline, n_iter=100, n_batch=2000,
          n_envs=mp.cpu_count(), kl_subsamp_ratio=0.5, step_size=0.01,
          last_iter=-1, gamma=0.99, gae_lambda=0.97, snapshot_saver=None):
 
     # Algorithm main loop
     with EnvPool(env_maker, n_envs=n_envs) as env_pool:
-        for iter in trange(last_iter + 1, n_iter, desc="Training",
+        for updt in trange(last_iter + 1, n_iter, desc="Training",
                            unit="updt", file=std_out(), dynamic_ncols=True):
-            logger.info("Starting iteration {}".format(iter))
-            logger.logkv("Iteration", iter)
+            logger.info("Starting iteration {}".format(updt))
+            logger.logkv("Iteration", updt)
             
             logger.info("Start collecting samples")
             trajs = parallel_collect_samples(env_pool, policy, n_batch)
@@ -41,8 +67,10 @@ def tnpg(env, env_maker, policy, baseline, n_iter=100, n_batch=2000,
                 subsamp_dists = all_dists
 
             logger.info("Computing policy gradient")
-            surr_loss = - torch.mean(
-                policy.dists(all_obs).log_prob(all_acts) * all_advs)
+            new_dists = policy.dists(all_obs)
+            likelihood_ratios = torch.exp(
+                new_dists.log_prob(all_acts) - all_dists.log_prob(all_acts))
+            surr_loss = -torch.mean(likelihood_ratios * all_advs)
             pol_grad = torch.cat([
                 g.view(-1)
                 for g in grad(surr_loss, policy.parameters())
@@ -65,17 +93,35 @@ def tnpg(env, env_maker, policy, baseline, n_iter=100, n_batch=2000,
             descent_step = descent_direction * scale
 
             logger.info("Performing line search")
-            # f(x0 - descent_step) \\approx f(x0) - grad_f.dot(descent_step)
-            expected_improvement = pol_grad.dot(descent_step)
+            expected_improvement = pol_grad.dot(descent_step).item()
 
+            @torch.no_grad()
+            def f_barrier(params):
+                vector_to_parameters(params, policy.parameters())
+                new_dists = policy.dists(all_obs)
+                likelihood_ratios = torch.exp(
+                    new_dists.log_prob(all_acts) - all_dists.log_prob(all_acts)
+                )
+                surr_loss = -torch.mean(likelihood_ratios * all_advs).item()
+                avg_kl = kl(all_dists, new_dists).mean().item()
+                return surr_loss + 1e100 * max(avg_kl - step_size, 0.)
+                
             flat_params = parameters_to_vector(policy.parameters())
-            vector_to_parameters(flat_params - descent_step, policy.parameters())
+            new_params = line_search(
+                f_barrier,
+                flat_params,
+                descent_step,
+                expected_improvement,
+                y0=surr_loss.item()
+            )
+            vector_to_parameters(new_params, policy.parameters())
 
             logger.info("Updating baseline")
             baseline.update(trajs)
 
             logger.info("Logging information")
-            logger.logkv("SurrLoss", surr_loss.item())
+            with torch.no_grad():
+                logger.logkv("MeanKL", avg_kl().item())
             log_reward_statistics(env)
             log_baseline_statistics(trajs)
             log_action_distribution_statistics(all_dists)
@@ -84,9 +130,9 @@ def tnpg(env, env_maker, policy, baseline, n_iter=100, n_batch=2000,
             if snapshot_saver is not None:
                 logger.info("Saving snapshot")
                 snapshot_saver.save_state(
-                    iter,
+                    updt,
                     dict(
-                        alg=tnpg,
+                        alg=trpo,
                         alg_state=dict(
                             env_maker=env_maker,
                             policy=policy,

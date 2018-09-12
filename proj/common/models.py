@@ -1,8 +1,7 @@
-import math
 import numpy as np
 import torch
 import torch.nn as nn
-from proj.common.utils import flatten_dim
+from proj.common.input import n_features, obs_to_tensor
 from proj.common.distributions import *
 
 torch.set_default_tensor_type(torch.FloatTensor)
@@ -17,18 +16,20 @@ class Model(nn.Module):
     def __init__(self, ob_space, ac_space, **kwargs):
         super().__init__()
         self.ob_space = ob_space
-        self.in_features = flatten_dim(ob_space)
+        self.obs_tensor = obs_to_tensor(ob_space)
+        self.in_features = n_features(ob_space)
 
         self.layers = nn.ModuleList()
 
 class MlpModel(Model):
-    def __init__(self, ob_space, ac_space, *, hidden_sizes=[64, 64], activation=nn.Tanh(), **kwargs):
+    def __init__(self, ob_space, ac_space, *, hidden_sizes=[64, 64],
+                 activation=nn.Tanh(), **kwargs):
         super().__init__(ob_space, ac_space, **kwargs)
         self.activation = activation
         in_features = self.in_features
         for out_features in hidden_sizes:
             layer = nn.Linear(in_features, out_features)
-            nn.init.orthogonal_(layer.weight, gain=math.sqrt(2))
+            nn.init.orthogonal_(layer.weight, gain=np.sqrt(2))
             nn.init.constant_(layer.bias, 0)
             self.layers.append(layer)
             self.layers.append(self.activation)
@@ -43,7 +44,7 @@ class Policy(Model):
     def __init__(self, ob_space, ac_space, **kwargs):
         super().__init__(ob_space, ac_space, **kwargs)
         # Try to make action probabilities as close as possible
-        out_features = flatten_dim(ac_space)
+        out_features = n_features(ac_space)
         layer = nn.Linear(self.out_features, out_features)
         nn.init.orthogonal_(layer.weight, gain=1)
         nn.init.constant_(layer.bias, 0)
@@ -53,7 +54,7 @@ class Policy(Model):
         self.distribution = make_pdtype(ac_space)
         
         if issubclass(self.distribution, Normal):
-            self.logstd = nn.Parameter(torch.zeros(1, self.ac_dim))
+            self.logstd = nn.Parameter(torch.zeros(1, self.out_features))
             self.out_features *= 2
             def features(layers_out):
                 logstd = self.logstd.expand_as(layers_out)
@@ -78,11 +79,9 @@ class Policy(Model):
         return self._features(x)
 
     @torch.no_grad()
-    def get_actions(self, obs):
-        features = self(torch.Tensor(obs))
-        dists = self.distribution(features)
-        actions = dists.sample()
-        return actions, features
+    def actions(self, obs):
+        obs = self.obs_tensor(obs)
+        return self.dists(obs).sample(), obs
 
     def dists(self, obs):
         return self.distribution(self(obs))

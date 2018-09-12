@@ -1,13 +1,18 @@
 import torch
 import click
 import time
-from proj.common.utils import SnapshotSaver
+from proj.common.input import obs_to_tensor
+from proj.common.saver import SnapshotSaver
 
 
 @click.command()
 @click.argument("dir")
-@click.option("--index", help="Wich file to load from", type=int, default=None)
+@click.option("--index", help="Wich checkpoint to load from", type=int, default=None)
 def main(dir, index):
+    """
+    Loads a snapshot and simulates the corresponding policy and environment.
+    """
+    
     state = None
     while state is None:
         saver = SnapshotSaver(dir)
@@ -23,9 +28,8 @@ def main(dir, index):
         ob = env.reset()
         done = False
         while not done:
-            with torch.no_grad():
-                action = policy(torch.Tensor(ob).unsqueeze(0)).sample()[0]
-            ob, rew, done, _ = env.step(action.numpy())
+            action, _ = policy.actions([ob])
+            ob, rew, done, _ = env.step(action[0].numpy())
             env.render()
             rewards += rew
         print(rewards)
