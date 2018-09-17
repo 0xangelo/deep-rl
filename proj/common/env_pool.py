@@ -4,11 +4,8 @@ import numpy as np
 import multiprocessing as mp
 import subprocess
 from tqdm import trange
-import tblib.pickling_support
 
 from proj.common.tqdm_util import std_out
-
-tblib.pickling_support.install()
 
 
 # ==============================

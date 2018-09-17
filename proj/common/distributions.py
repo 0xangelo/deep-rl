@@ -11,6 +11,9 @@ class Normal(dist.Normal):
     def flatparam(self):
         return torch.cat((self.loc, self.scale), dim=1)
 
+    def likelihood_ratios(self, other, variables):
+        return torch.exp(self.log_prob(variables) - other.log_prob(variables))
+
 
 class Categorical(dist.Categorical):
     def __init__(self, flatparam):
@@ -18,6 +21,9 @@ class Categorical(dist.Categorical):
 
     def flatparam(self):
         return self.logits
+
+    def likelihood_ratios(self, other, variables):
+        return torch.exp(self.log_prob(variables) - other.log_prob(variables))
 
 
 def make_pdtype(ac_space):

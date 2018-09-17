@@ -1,5 +1,6 @@
 import gym
 import torch
+from torch.autograd import grad
 import numpy as np
 import random
 
@@ -36,6 +37,14 @@ def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
 
     return x
 
+
+def fisher_vector_product(v, avg_kl, policy, damping=1e-3):
+    grads = grad(avg_kl(), policy.parameters(), create_graph=True)
+    flat_grads = torch.cat([grad.view(-1) for grad in grads])
+    fvp = grad((flat_grads * v).sum(), policy.parameters())
+    flat_fvp = torch.cat([g.contiguous().view(-1).data for g in fvp])
+    return flat_fvp + v * damping
+    
 
 def explained_variance_1d(ypred, y):
     assert y.dim() == 1 and ypred.dim() == 1

@@ -7,12 +7,12 @@ import cloudpickle
 # ==============================
 
 class SnapshotSaver(object):
-    def __init__(self, dir, interval=1, latest_only=None):
-        self.dir = dir
+    def __init__(self, path, interval=1, latest_only=None):
+        self.path = path
         self.interval = interval
         if latest_only is None:
             latest_only = True
-            snapshots_folder = os.path.join(dir, "snapshots")
+            snapshots_folder = os.path.join(path, "snapshots")
             if os.path.exists(snapshots_folder):
                 if os.path.exists(os.path.join(snapshots_folder, "latest.pkl")):
                     latest_only = True
@@ -22,7 +22,7 @@ class SnapshotSaver(object):
 
     @property
     def snapshots_folder(self):
-        return os.path.join(self.dir, "snapshots")
+        return os.path.join(self.path, "snapshots")
 
     def get_snapshot_path(self, index):
         if self.latest_only:
@@ -44,13 +44,13 @@ class SnapshotSaver(object):
                     return cloudpickle.load(f)
             except EOFError:
                 pass
+        elif index is not None:
+            try:
+                with open(self.get_snapshot_path(index), "rb") as f:
+                    return cloudpickle.load(f)
+            except EOFError:
+                pass
         else:
-            if index is not None:
-                try:
-                    with open(self.get_snapshot_path(index), "rb") as f:
-                        return cloudpickle.load(f)
-                except EOFError:
-                    pass
             snapshot_files = os.listdir(self.snapshots_folder)
             snapshot_files = sorted(
                 snapshot_files, key=lambda x: int(x.split(".")[0]))[::-1]

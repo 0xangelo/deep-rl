@@ -51,9 +51,9 @@ class Policy(Model):
         self.layers.append(layer)
         self.out_features = out_features
         
-        self.distribution = make_pdtype(ac_space)
+        self.pdtype = make_pdtype(ac_space)
         
-        if issubclass(self.distribution, Normal):
+        if issubclass(self.pdtype, Normal):
             self.logstd = nn.Parameter(torch.zeros(1, self.out_features))
             self.out_features *= 2
             def features(layers_out):
@@ -67,7 +67,8 @@ class Policy(Model):
 
     def forward(self, x):
         """
-        Given some observations, returns the action distributions
+        Given some observations, returns the parameters 
+        for the action distributions
 
         Arguments:
         x (Tensor): A batch of observations
@@ -84,7 +85,7 @@ class Policy(Model):
         return self.dists(obs).sample(), obs
 
     def dists(self, obs):
-        return self.distribution(self(obs))
+        return self.pdtype(self(obs))
         
 
 class MlpPolicy(Policy, MlpModel):

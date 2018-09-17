@@ -8,7 +8,7 @@ from proj.common.saver import SnapshotSaver
 from proj.common.utils import set_global_seeds
 from proj.common.models import MlpPolicy, MlpBaseline
 from proj.common.tqdm_util import tqdm_out
-from proj.algorithms import vanilla
+from proj.algorithms import natural
 
 
 @click.command()
@@ -18,13 +18,15 @@ from proj.algorithms import vanilla
 @click.option("--n_batch", help="number of samples per iter", type=int, default=2000)
 @click.option("--n_envs", help="number of environments to run in parallel", type=int, default=8)
 @click.option("--lr", help="learning rate for Adam", type=float, default=1e-3)
+@click.option("--kl_sample_frac", help="fraction of samples for kl computation", type=float, default=0.4)
 @click.option("--interval", help="interval between each snapshot", type=int, default=10)
 @click.option("--seed", help="for repeatability", type=int, default=None)
-def main(env, log_dir, n_iter, n_batch, n_envs, lr, interval, seed):
-    """Runs vanilla pg on given environment with specified parameters."""
+def main(env, log_dir, n_iter, n_batch, n_envs, lr, kl_sample_frac, interval,
+         seed):
+    """Runs natural pg on given environment with specified parameters."""
     
     seed = set_global_seeds(seed)
-    exp_name = 'vanilla-' + env 
+    exp_name = 'natural-' + env 
     log_dir += exp_name + '-' + str(seed) + '/'
     os.system("rm -rf {}".format(log_dir))
 
@@ -39,7 +41,7 @@ def main(env, log_dir, n_iter, n_batch, n_envs, lr, interval, seed):
         baseline = MlpBaseline(ob_space, ac_space)
         optimizer = torch.optim.Adam(policy.parameters(), lr=lr)
 
-        vanilla(
+        natural(
             env=env,
             env_maker=env_maker,
             policy=policy,
@@ -48,6 +50,7 @@ def main(env, log_dir, n_iter, n_batch, n_envs, lr, interval, seed):
             n_batch=n_batch,
             n_envs=n_envs,
             optimizer=optimizer,
+            kl_sample_frac=kl_sample_frac,
             snapshot_saver=SnapshotSaver(log_dir, interval=interval)
         )
 
