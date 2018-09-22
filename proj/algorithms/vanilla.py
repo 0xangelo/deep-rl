@@ -9,7 +9,7 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
         optimizer = torch.optim.Adam(policy.parameters())
 
     # Algorithm main loop
-    with EnvPool(env_maker, n_envs=n_envs) as env_pool:
+    with EnvPool(env, env_maker, n_envs=n_envs) as env_pool:
         for updt in trange(last_iter + 1, n_iter, desc="Training",
                            unit="updt", file=std_out(), dynamic_ncols=True):
             logger.info("Starting iteration {}".format(updt))

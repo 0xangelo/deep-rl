@@ -1,7 +1,8 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from proj.common.input import n_features, obs_to_tensor
+from abc import ABC, abstractmethod
+from proj.common.input import n_features
 from proj.common.distributions import *
 
 torch.set_default_tensor_type(torch.FloatTensor)
@@ -16,7 +17,6 @@ class Model(nn.Module):
     def __init__(self, ob_space, ac_space, **kwargs):
         super().__init__()
         self.ob_space = ob_space
-        self.obs_tensor = obs_to_tensor(ob_space)
         self.in_features = n_features(ob_space)
 
         self.layers = nn.ModuleList()
@@ -40,7 +40,21 @@ class MlpModel(Model):
 # Policies
 # ==============================
 
-class Policy(Model):
+class AbstractPolicy(ABC, Model):
+    @abstractmethod
+    def actions(self, obs):
+        pass
+
+    @abstractmethod
+    def action(self, ob):
+        pass
+
+    @abstractmethod
+    def dists(self, obs):
+        pass
+
+
+class NNFeaturePolicy(AbstractPolicy):
     def __init__(self, ob_space, ac_space, **kwargs):
         super().__init__(ob_space, ac_space, **kwargs)
         # Try to make action probabilities as close as possible
@@ -81,21 +95,41 @@ class Policy(Model):
 
     @torch.no_grad()
     def actions(self, obs):
-        obs = self.obs_tensor(obs)
-        return self.dists(obs).sample(), obs
+        return self.dists(obs).sample()
+
+    def action(self, ob):
+        return self.actions(ob.unsqueeze(0))[0]
 
     def dists(self, obs):
         return self.pdtype(self(obs))
         
 
-class MlpPolicy(Policy, MlpModel):
+class MlpPolicy(NNFeaturePolicy, MlpModel):
     pass
 
 # ==============================
 # Baselines
 # ==============================
 
-class Baseline(Model):
+class AbstractBaseline(ABC, Model):
+    @abstractmethod
+    def forward(self, x):
+        pass
+
+    @abstractmethod
+    def update(self, trajs):
+        pass
+
+
+class ZeroBaseline(AbstractBaseline):
+    def forward(self, x):
+        return torch.zeros(len(x))
+
+    def update(self, trajs):
+        pass
+
+
+class NNFeatureBaseline(AbstractBaseline):
     def __init__(self, ob_space, ac_space, *, mixture_fraction=0.1, **kwargs):
         super().__init__(ob_space, ac_space, **kwargs)
         self.mixture_fraction = mixture_fraction
@@ -134,5 +168,5 @@ class Baseline(Model):
         optimizer.step(closure)
 
 
-class MlpBaseline(Baseline, MlpModel):
+class MlpBaseline(NNFeatureBaseline, MlpModel):
     pass

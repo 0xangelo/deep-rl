@@ -1,11 +1,13 @@
 import sys
 import torch
 import numpy as np
+import gym
 import multiprocessing as mp
 import subprocess
 from tqdm import trange
 
 from proj.common.tqdm_util import std_out
+from proj.common.input import obs_to_tensor
 
 
 # ==============================
@@ -61,8 +63,10 @@ class EnvPool(object):
     as possible.
     """
 
-    def __init__(self, env_maker, n_envs=mp.cpu_count(), n_parallel=mp.cpu_count()):
+    def __init__(self, env, env_maker, n_envs=mp.cpu_count(),
+                 n_parallel=mp.cpu_count()):
         self.env_maker = env_maker
+        self.obs_to_tensor = obs_to_tensor(env.observation_space)
         self.n_envs = n_envs
         # No point in having more parallel workers than environments
         if n_parallel > n_envs:
@@ -119,6 +123,7 @@ class EnvPool(object):
             else:
                 raise data[1].with_traceback(data[2])
         assert len(obs) == self.n_envs
+        obs = self.obs_to_tensor(obs)
         self.last_obs = obs
         return obs
 
@@ -132,6 +137,7 @@ class EnvPool(object):
 
     def step(self, actions):
         assert len(actions) == self.n_envs
+        actions = actions.cpu().numpy()
         for idx, conn in enumerate(self.conns):
             offset = self.worker_env_offsets[idx]
             conn.send(
@@ -145,7 +151,8 @@ class EnvPool(object):
                 results.extend(data)
             else:
                 raise data[1].with_traceback(data[2])
-        next_obs, rews, dones, infos = list(map(list, zip(*results)))
+        next_obs, rews, dones, infos = tuple(map(list, zip(*results)))
+        next_obs = self.obs_to_tensor(next_obs)
         self.last_obs = next_obs
         return next_obs, rews, dones, infos
 
@@ -203,8 +210,8 @@ def parallel_collect_samples(env_pool, policy, num_samples):
 
     for _ in trange(0, num_samples, env_pool.n_envs, unit="step", leave=False,
                     desc="Sampling", file=std_out(), dynamic_ncols=True):
-        actions, obs = policy.actions(obs)
-        next_obs, rews, dones, infos = env_pool.step(actions.cpu().numpy())
+        actions = policy.actions(obs)
+        next_obs, rews, dones, infos = env_pool.step(actions)
         for idx in range(env_pool.n_envs):
             if partial_trajs[idx] is None:
                 partial_trajs[idx] = dict(
@@ -222,7 +229,7 @@ def parallel_collect_samples(env_pool, policy, num_samples):
                         observations=torch.stack(traj["observations"]),
                         actions=torch.stack(traj["actions"]),
                         rewards=torch.Tensor(traj["rewards"]),
-                        last_observation=policy.obs_tensor(
+                        last_observation=env_pool.obs_to_tensor(
                             infos[idx]["last_observation"]),
                         finished=True,
                     )
@@ -238,7 +245,7 @@ def parallel_collect_samples(env_pool, policy, num_samples):
                     observations=torch.stack(traj["observations"]),
                     actions=torch.stack(traj["actions"]),
                     rewards=torch.Tensor(traj["rewards"]),
-                    last_observation=policy.obs_tensor(obs[idx]),
+                    last_observation=obs[idx],
                     finished=False,
                 )
             )

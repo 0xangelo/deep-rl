@@ -34,7 +34,9 @@ import gym.logger
 from gym import spaces
 from gym.envs.atari.atari_env import AtariEnv
 from collections import deque
+
 from proj.common import logger
+from proj.common.input import obs_to_tensor
 
 # Silence the log messages
 gym.logger.set_level(logging.ERROR)
@@ -44,7 +46,7 @@ class EnvMaker(object):
     def __init__(self, env_id):
         self.env_id = env_id
 
-    def make(self):
+    def make(self, pytorch=False):
         env = gym.make(self.env_id)
         if logger.get_dir() is not None:
             monitor_dir = os.path.join(logger.get_dir(), "gym_monitor")
@@ -62,7 +64,21 @@ class EnvMaker(object):
                 env = ScaledFloatFrame(env)
             else:
                 env = ScaledFloatFrame(wrap_atari_pg(env))
-        return env
+        return PyTorchEnv(env) if pytorch else env
+
+
+class PyTorchEnv(gym.Wrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.obs_to_tensor = obs_to_tensor(env.observation_space)
+        
+    def step(self, action):
+        observation, reward, done, info = self.env.step(action.cpu().numpy())
+        return self.obs_to_tensor(observation), reward, done, info
+
+    def reset(self, **kwargs):
+        observation = self.env.reset(**kwargs)
+        return self.obs_to_tensor(observation)
 
 
 # Code below are adopted from OpenAI Baselines:

@@ -12,15 +12,17 @@ from proj.common.tqdm_util import tqdm_out
 def main(path, add):
     """
     Loads latest snapshot and resumes training.
+
+    WARNING: not repeatable, rng state cannot be recovered from snapshot
     """
-    
+
     state = None
     while state is None:
         saver = SnapshotSaver(path)
         state = saver.get_state()
         if state is None:
             time.sleep(1)
-        
+
     with tqdm_out(), logger.session(path):
         alg = state['alg']
         alg_state = state['alg_state']

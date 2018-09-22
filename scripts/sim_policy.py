@@ -20,15 +20,15 @@ def main(path, index):
             time.sleep(1)
         
     alg_state = state['alg_state']
-    env = alg_state['env_maker'].make()
+    env = alg_state['env_maker'].make(pytorch=True)
     policy = alg_state['policy']
     for _ in range(10):
         rewards = 0
         ob = env.reset()
         done = False
         while not done:
-            action, _ = policy.actions([ob])
-            ob, rew, done, _ = env.step(action[0].numpy())
+            action = policy.action(ob)
+            ob, rew, done, _ = env.step(action)
             env.render()
             rewards += rew
         print(rewards)

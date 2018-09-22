@@ -55,7 +55,7 @@ def compute_pg_vars(trajs, policy, baseline, discount, gae_lambda):
         if traj['finished']:
             # If already finished, the future cumulative rewards starting from
             # the final state is 0
-            baselines[-1] = 0.
+            baselines[-1] *= 0.
         # This is useful when fitting baselines. It uses the baseline prediction
         # of the last state value to perform Bellman backup if the trajectory is
         # not finished.
@@ -129,15 +129,15 @@ def log_baseline_statistics(trajs):
 
 
 def log_action_distribution_statistics(dists):
-    logger.logkv('Entropy', torch.mean(dists.entropy()).item())
-    logger.logkv('Perplexity', torch.mean(dists.perplexity()).item())
+    logger.logkv('Entropy', dists.entropy().mean().item())
+    logger.logkv('Perplexity', dists.perplexity().mean().item())
     if isinstance(dists, Normal):
-        logger.logkv('AveragePolicyStd', torch.mean(dists.stddev).item())
+        logger.logkv('AveragePolicyStd', dists.stddev.mean().item())
         for idx in range(dists.stddev.shape[-1]):
             logger.logkv('AveragePolicyStd[{}]'.format(idx),
-                          torch.mean(dists.stddev[...,idx]).item())
+                          dists.stddev[...,idx].mean().item())
     elif isinstance(dists, Categorical):
-        probs = torch.mean(torch.softmax(dists.logits, dim=1), dim=0)
+        probs = dists.probs.mean(0)
         for idx in range(probs.numel()):
             logger.logkv('AveragePolicyProb[{}]'.format(idx), probs[idx].item())
 

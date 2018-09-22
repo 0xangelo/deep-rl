@@ -26,7 +26,7 @@ def main(env, log_dir, n_iter, n_batch, n_envs, lr, kl_sample_frac, interval,
     """Runs natural pg on given environment with specified parameters."""
     
     seed = set_global_seeds(seed)
-    exp_name = 'natural-' + env 
+    exp_name = 'natural-' + env
     log_dir += exp_name + '-' + str(seed) + '/'
     os.system("rm -rf {}".format(log_dir))
 

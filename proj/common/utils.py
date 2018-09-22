@@ -44,7 +44,7 @@ def fisher_vector_product(v, avg_kl, policy, damping=1e-3):
     fvp = grad((flat_grads * v).sum(), policy.parameters())
     flat_fvp = torch.cat([g.contiguous().view(-1).data for g in fvp])
     return flat_fvp + v * damping
-    
+
 
 def explained_variance_1d(ypred, y):
     assert y.dim() == 1 and ypred.dim() == 1
