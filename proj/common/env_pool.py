@@ -1,13 +1,6 @@
-import sys
-import torch
-import numpy as np
-import gym
-import multiprocessing as mp
-import subprocess
-from tqdm import trange
-
-from proj.common.tqdm_util import std_out
-from proj.common.input import obs_to_tensor
+import sys, gym, torch, numpy as np, multiprocessing as mp, subprocess
+from .tqdm_util import trange
+from .observations import obs_to_tensor
 
 
 # ==============================
@@ -209,7 +202,7 @@ def parallel_collect_samples(env_pool, policy, num_samples):
         obs = env_pool.reset()
 
     for _ in trange(0, num_samples, env_pool.n_envs, unit="step", leave=False,
-                    desc="Sampling", file=std_out(), dynamic_ncols=True):
+                    desc="Sampling", dynamic_ncols=True):
         actions = policy.actions(obs)
         next_obs, rews, dones, infos = env_pool.step(actions)
         for idx in range(env_pool.n_envs):

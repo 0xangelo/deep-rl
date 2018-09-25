@@ -1,7 +1,4 @@
-import os
-import json
-import torch
-import click
+import os, json, torch, click
 from proj.common import logger
 from proj.common.env_makers import EnvMaker
 from proj.common.saver import SnapshotSaver

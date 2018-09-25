@@ -26,15 +26,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 
-import datetime
+import os, os.path as osp, sys, json, shutil, datetime, dateutil.tz
 from collections import OrderedDict
-import os
-import sys
-import shutil
-import os.path as osp
-import json
 
-import dateutil.tz
 
 LOG_OUTPUT_FORMATS = ['log', 'json']
 
@@ -207,9 +201,10 @@ def get_dir():
 
 class Logger(object):
     # A logger with no output files. (See right below class definition)
+    # So one can still log to the terminal without setting up any output files
     DEFAULT = None
-    # So that you can still log to the terminal without setting up any output files
-    CURRENT = None  # Current logger being used by the free functions above
+    # Current logger being used by the free functions above
+    CURRENT = None
 
     def __init__(self, dir, output_formats):
         self.name2val = OrderedDict()  # values this iteration
@@ -296,19 +291,19 @@ def _demo():
     if os.path.exists(dir):
         shutil.rmtree(dir)
     with session(dir=dir):
-        record_tabular("a", 3)
-        record_tabular("b", 2.5)
-        dump_tabular()
-        record_tabular("b", -2.5)
-        record_tabular("a", 5.5)
-        dump_tabular()
+        logkv("a", 3)
+        logkv("b", 2.5)
+        dumpkvs()
+        logkv("b", -2.5)
+        logkv("a", 5.5)
+        dumpkvs()
         info("^^^ should see a = 5.5")
 
-    record_tabular("b", -2.5)
-    dump_tabular()
+    logkv("b", -2.5)
+    dumpkvs()
 
-    record_tabular("a", "longasslongasslongasslongasslongasslongassvalue")
-    dump_tabular()
+    logkv("a", "longasslongasslongasslongasslongasslongassvalue")
+    dumpkvs()
 
 
 if __name__ == "__main__":

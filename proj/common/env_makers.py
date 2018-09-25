@@ -24,22 +24,15 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 
-import os
-import cv2
-import logging
-import tempfile
-import numpy as np
-import gym
-import gym.logger
+import os, cv2, gym, gym.logger, numpy as np
+from . import logger, observations
 from gym import spaces
 from gym.envs.atari.atari_env import AtariEnv
 from collections import deque
 
-from proj.common import logger
-from proj.common.input import obs_to_tensor
 
 # Silence the log messages
-gym.logger.set_level(logging.ERROR)
+gym.logger.set_level(gym.logger.ERROR)
 
 
 class EnvMaker(object):
@@ -70,7 +63,7 @@ class EnvMaker(object):
 class PyTorchEnv(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
-        self.obs_to_tensor = obs_to_tensor(env.observation_space)
+        self.obs_to_tensor = observations.obs_to_tensor(env.observation_space)
         
     def step(self, action):
         observation, reward, done, info = self.env.step(action.cpu().numpy())

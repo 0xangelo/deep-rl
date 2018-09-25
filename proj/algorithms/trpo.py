@@ -1,8 +1,8 @@
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions.kl import kl_divergence as kl
 from torch.autograd import grad
-from proj.common.utils import conjugate_gradient, fisher_vector_product
-from proj.common.alg_utils import *
+from ..common.utils import conjugate_gradient, fisher_vector_product
+from ..common.alg_utils import *
 
 
 def line_search(f, x0, dx, expected_improvement, y0=None, accept_ratio=0.1,
@@ -37,8 +37,8 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
 
     # Algorithm main loop
     with EnvPool(env, env_maker, n_envs=n_envs) as env_pool:
-        for updt in trange(last_iter + 1, n_iter, desc="Training",
-                           unit="updt", file=std_out(), dynamic_ncols=True):
+        for updt in trange(last_iter + 1, n_iter, desc="Training", unit="updt",
+                           dynamic_ncols=True):
             logger.info("Starting iteration {}".format(updt))
             logger.logkv("Iteration", updt)
             
@@ -71,8 +71,7 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             ])
             
             logger.info("Computing truncated natural gradient")
-            avg_kl = lambda: kl(subsamp_dists, policy.dists(subsamp_obs)).mean()
-            F_0 = lambda v: fisher_vector_product(v, avg_kl, policy)
+            F_0 = lambda v: fisher_vector_product(v, subsamp_obs, policy)
 
             descent_direction = conjugate_gradient(F_0, pol_grad)
             scale = torch.sqrt(
@@ -108,7 +107,8 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
 
             logger.info("Logging information")
             with torch.no_grad():
-                logger.logkv("MeanKL", avg_kl().item())
+                avg_kl = kl(subsamp_dists, policy.dists(subsamp_obs)).mean()
+                logger.logkv("MeanKL", avg_kl.item())
             log_reward_statistics(env)
             log_baseline_statistics(trajs)
             log_action_distribution_statistics(all_dists)

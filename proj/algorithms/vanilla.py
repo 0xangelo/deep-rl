@@ -1,4 +1,4 @@
-from proj.common.alg_utils import *
+from ..common.alg_utils import *
 
 
 def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
@@ -10,8 +10,8 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
 
     # Algorithm main loop
     with EnvPool(env, env_maker, n_envs=n_envs) as env_pool:
-        for updt in trange(last_iter + 1, n_iter, desc="Training",
-                           unit="updt", file=std_out(), dynamic_ncols=True):
+        for updt in trange(last_iter + 1, n_iter, desc="Training", unit="updt",
+                           dynamic_ncols=True):
             logger.info("Starting iteration {}".format(updt))
             logger.logkv("Iteration", updt)
             

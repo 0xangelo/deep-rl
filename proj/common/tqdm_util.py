@@ -1,6 +1,6 @@
-import contextlib
-import sys
-from tqdm import tqdm
+import sys, contextlib
+from tqdm import tqdm, trange as _trange
+
 
 class DummyTqdmFile(object):
     """Dummy file-like that will write to tqdm"""
@@ -35,3 +35,11 @@ def tqdm_out():
     finally:
         sys.stdout, sys.stderr = ORIG_STD_OUT_ERR
 
+
+def trange(*args, **kwargs):
+    """
+    A replacement for tqdm.trange, automatically setting file=std_out() if not
+    specified.
+    """
+    if 'file' in kwargs: return _trange(*args, **kwargs)
+    return _trange(*args, file=std_out(), **kwargs)

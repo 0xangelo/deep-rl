@@ -1,13 +1,9 @@
-import gym
-import torch
-import numpy as np
-from tqdm import trange
-import multiprocessing as mp
-from proj.common import logger
-from proj.common.utils import explained_variance_1d
-from proj.common.tqdm_util import std_out
-from proj.common.env_pool import EnvPool, parallel_collect_samples
-from proj.common.distributions import Normal, Categorical
+import gym, torch, numpy as np, multiprocessing as mp
+from . import logger
+from .utils import explained_variance_1d
+from .tqdm_util import trange
+from .env_pool import EnvPool, parallel_collect_samples
+from .distributions import Normal, Categorical
 
 # ==============================
 # Shared utilities
@@ -85,7 +81,7 @@ def compute_pg_vars(trajs, policy, baseline, discount, gae_lambda):
 
 def log_reward_statistics(env):
     # keep unwrapping until we get the monitor
-    while not isinstance(env, gym.wrappers.Monitor):  # and not isinstance()
+    while not isinstance(env, gym.wrappers.Monitor):
         if not isinstance(env, gym.Wrapper):
             assert False
         env = env.env

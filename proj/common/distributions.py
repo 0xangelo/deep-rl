@@ -1,9 +1,7 @@
-import torch
-import torch.nn as nn
-import torch.distributions as dist
+import torch, torch.nn as nn, torch.distributions as dists
 
 
-class Normal(dist.Normal):
+class Normal(dists.Normal):
     def __init__(self, flatparam):
         loc, scale = torch.chunk(flatparam, 2, dim=1)
         super().__init__(loc=loc, scale=scale)
@@ -15,7 +13,7 @@ class Normal(dist.Normal):
         return torch.exp(self.log_prob(variables) - other.log_prob(variables))
 
 
-class Categorical(dist.Categorical):
+class Categorical(dists.Categorical):
     def __init__(self, flatparam):
         super().__init__(logits=flatparam)
 

@@ -1,9 +1,7 @@
-import numpy as np
-import torch
-import torch.nn as nn
+import torch, torch.nn as nn, numpy as np
 from abc import ABC, abstractmethod
-from proj.common.input import n_features
-from proj.common.distributions import *
+from . import distributions as dists
+from .observations import n_features
 
 torch.set_default_tensor_type(torch.FloatTensor)
 if torch.cuda.is_available():
@@ -43,18 +41,53 @@ class MlpModel(Model):
 class AbstractPolicy(ABC, Model):
     @abstractmethod
     def actions(self, obs):
+        """
+        Given a batch of observations, return a batch of actions, 
+        each sampled from the corresponding action distributions.
+
+        Args:
+        x (Tensor): A batch of observations
+
+        return (Tensor): A batch of actions
+        """
+        pass
+
+    @abstractmethod
+    def forward(self, x):
+        """
+        Given some observations, returns the parameters 
+        for the action distributions.
+
+        Args:
+        x (Tensor): A batch of observations
+
+        return (Tensor): distribution parameters
+        """
         pass
 
     @abstractmethod
     def action(self, ob):
+        """
+        Single observation version of AbstractPolicy.actions,
+        with batch dimension removed.
+        """
         pass
 
     @abstractmethod
     def dists(self, obs):
+        """
+        Given a batch of observations, return a batch of corresponding 
+        action distributions.
+
+        Args:
+        obs (Tensor): A batch of observations
+
+        return (Tensor): A batch of action distributions
+        """
         pass
 
 
-class NNFeaturePolicy(AbstractPolicy):
+class FeedForwardPolicy(AbstractPolicy):
     def __init__(self, ob_space, ac_space, **kwargs):
         super().__init__(ob_space, ac_space, **kwargs)
         # Try to make action probabilities as close as possible
@@ -65,9 +98,9 @@ class NNFeaturePolicy(AbstractPolicy):
         self.layers.append(layer)
         self.out_features = out_features
         
-        self.pdtype = make_pdtype(ac_space)
+        self.pdtype = dists.make_pdtype(ac_space)
         
-        if issubclass(self.pdtype, Normal):
+        if issubclass(self.pdtype, dists.Normal):
             self.logstd = nn.Parameter(torch.zeros(1, self.out_features))
             self.out_features *= 2
             def features(layers_out):
@@ -80,15 +113,6 @@ class NNFeaturePolicy(AbstractPolicy):
         self._features = features
 
     def forward(self, x):
-        """
-        Given some observations, returns the parameters 
-        for the action distributions
-
-        Arguments:
-        x (Tensor): A batch of observations
-
-        return (Tensor): distribution parameters
-        """
         for module in self.layers:
             x = module(x)
         return self._features(x)
@@ -104,7 +128,7 @@ class NNFeaturePolicy(AbstractPolicy):
         return self.pdtype(self(obs))
         
 
-class MlpPolicy(NNFeaturePolicy, MlpModel):
+class MlpPolicy(FeedForwardPolicy, MlpModel):
     pass
 
 # ==============================
@@ -114,10 +138,25 @@ class MlpPolicy(NNFeaturePolicy, MlpModel):
 class AbstractBaseline(ABC, Model):
     @abstractmethod
     def forward(self, x):
+        """
+        Given some observations, compute the baselines.
+        
+        Args:
+            x (Tensor): A batch of observations
+
+        return (Tensor): baselines for each observation
+        """
         pass
 
     @abstractmethod
     def update(self, trajs):
+        """
+        Given a list of trajectories, update the reinforcement baseline.
+
+        Args:
+        trajs (list): A list of trajectories as returned from 
+                            parallel_collect_samples
+        """
         pass
 
 
@@ -129,7 +168,7 @@ class ZeroBaseline(AbstractBaseline):
         pass
 
 
-class NNFeatureBaseline(AbstractBaseline):
+class FeedForwardBaseline(AbstractBaseline):
     def __init__(self, ob_space, ac_space, *, mixture_fraction=0.1, **kwargs):
         super().__init__(ob_space, ac_space, **kwargs)
         self.mixture_fraction = mixture_fraction
@@ -137,14 +176,6 @@ class NNFeatureBaseline(AbstractBaseline):
         self.out_features = 1
 
     def forward(self, x):
-        """
-        Given some observations, compute the baselines
-        
-        Arguments:
-        param x (Tensor): A batch of observations
-
-        return (Tensor): baselines for each observation
-        """
         for module in self.layers:
             x = module(x)
         return torch.squeeze(x)
@@ -168,5 +199,5 @@ class NNFeatureBaseline(AbstractBaseline):
         optimizer.step(closure)
 
 
-class MlpBaseline(NNFeatureBaseline, MlpModel):
+class MlpBaseline(FeedForwardBaseline, MlpModel):
     pass
