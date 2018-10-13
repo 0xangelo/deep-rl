@@ -1,6 +1,6 @@
 import torch, torch.nn as nn, numpy as np
 from abc import ABC, abstractmethod
-from . import distributions as dists
+from . import distributions
 from .observations import n_features
 
 torch.set_default_tensor_type(torch.FloatTensor)
@@ -12,33 +12,57 @@ if torch.cuda.is_available():
 # ==============================
 
 class Model(nn.Module):
-    def __init__(self, ob_space, ac_space, **kwargs):
+    def __init__(self, env, **kwargs):
         super().__init__()
-        self.ob_space = ob_space
-        self.in_features = n_features(ob_space)
+        self.ob_space = env.observation_space
+        self.in_features = n_features(self.ob_space)
 
-        self.layers = nn.ModuleList()
 
-class MlpModel(Model):
-    def __init__(self, ob_space, ac_space, *, hidden_sizes=[64, 64],
-                 activation=nn.Tanh(), **kwargs):
-        super().__init__(ob_space, ac_space, **kwargs)
+class FeedForwardModel(ABC):
+    @abstractmethod
+    def build_network(self):
+        pass
+
+    @staticmethod
+    @abstractmethod
+    def initialize(module):
+        pass
+
+
+class MlpModel(Model, FeedForwardModel):
+    def __init__(self, env, *, hidden_sizes=[64, 64], activation=nn.Tanh,
+                 **kwargs):
+        super().__init__(env, **kwargs)
         self.activation = activation
-        in_features = self.in_features
-        for out_features in hidden_sizes:
-            layer = nn.Linear(in_features, out_features)
-            nn.init.orthogonal_(layer.weight, gain=np.sqrt(2))
-            nn.init.constant_(layer.bias, 0)
-            self.layers.append(layer)
-            self.layers.append(self.activation)
-            in_features = out_features
-        self.out_features = in_features
+        self.hidden_sizes = hidden_sizes
+
+    def build_network(self):
+        layers, in_sizes = [], [self.in_features] + self.hidden_sizes[:-1]
+        for in_features, out_features in zip(in_sizes, self.hidden_sizes):
+            layers.append(nn.Linear(in_features, out_features))
+            layers.append(self.activation())
+        layers.append(nn.Linear(self.hidden_sizes[-1], self.out_features))
+            
+        return nn.Sequential(*layers) 
+
+    @staticmethod
+    def initialize(module):
+        if isinstance(module, nn.Linear):
+            nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
+            nn.init.constant_(module.bias, 0)        
+
 
 # ==============================
 # Policies
 # ==============================
 
-class AbstractPolicy(ABC, Model):
+class AbstractPolicy(ABC):
+    def __init__(self, env, **kwargs):
+        super().__init__(env, **kwargs)
+        self.ac_space = env.action_space
+        self.out_features = n_features(self.ac_space)
+        self.pdtype = distributions.make_pdtype(self.ac_space)
+        
     @abstractmethod
     def actions(self, obs):
         """
@@ -87,20 +111,12 @@ class AbstractPolicy(ABC, Model):
         pass
 
 
-class FeedForwardPolicy(AbstractPolicy):
-    def __init__(self, ob_space, ac_space, **kwargs):
-        super().__init__(ob_space, ac_space, **kwargs)
-        # Try to make action probabilities as close as possible
-        out_features = n_features(ac_space)
-        layer = nn.Linear(self.out_features, out_features)
-        nn.init.orthogonal_(layer.weight, gain=1)
-        nn.init.constant_(layer.bias, 0)
-        self.layers.append(layer)
-        self.out_features = out_features
+class FeedForwardPolicy(AbstractPolicy, FeedForwardModel):
+    def __init__(self, env, **kwargs):
+        super().__init__(env, **kwargs)
+        self.network = self.build_network()
         
-        self.pdtype = dists.make_pdtype(ac_space)
-        
-        if issubclass(self.pdtype, dists.Normal):
+        if issubclass(self.pdtype, distributions.Normal):
             self.logstd = nn.Parameter(torch.zeros(1, self.out_features))
             self.out_features *= 2
             def features(layers_out):
@@ -108,14 +124,12 @@ class FeedForwardPolicy(AbstractPolicy):
                 sttdev = torch.exp(logstd)
                 return torch.cat((layers_out, sttdev), dim=1)
         else:
-            def features(layers_out):
-                return layers_out
+            features = lambda x: x
         self._features = features
+        self.apply(self.initialize)
 
     def forward(self, x):
-        for module in self.layers:
-            x = module(x)
-        return self._features(x)
+        return self._features(self.network(x))
 
     @torch.no_grad()
     def actions(self, obs):
@@ -135,7 +149,7 @@ class MlpPolicy(FeedForwardPolicy, MlpModel):
 # Baselines
 # ==============================
 
-class AbstractBaseline(ABC, Model):
+class AbstractBaseline(ABC):
     @abstractmethod
     def forward(self, x):
         """
@@ -160,7 +174,7 @@ class AbstractBaseline(ABC, Model):
         pass
 
 
-class ZeroBaseline(AbstractBaseline):
+class ZeroBaseline(AbstractBaseline, Model):
     def forward(self, x):
         return torch.zeros(len(x))
 
@@ -168,17 +182,21 @@ class ZeroBaseline(AbstractBaseline):
         pass
 
 
-class FeedForwardBaseline(AbstractBaseline):
-    def __init__(self, ob_space, ac_space, *, mixture_fraction=0.1, **kwargs):
-        super().__init__(ob_space, ac_space, **kwargs)
+class FeedForwardBaseline(AbstractBaseline, FeedForwardModel):
+    def __init__(self, env, *, mixture_fraction=0.1, **kwargs):
+        super().__init__(env, **kwargs)
         self.mixture_fraction = mixture_fraction
-        self.layers.append(nn.Linear(self.out_features, 1))
+        self.timestep_limit = env.spec.timestep_limit
+        self.in_features += 1
         self.out_features = 1
+        self.network = self.build_network()
+        self.apply(self.initialize)
 
     def forward(self, x):
-        for module in self.layers:
-            x = module(x)
-        return torch.squeeze(x)
+        # Append relative timestep to observation to properly identify state
+        ts = torch.arange(len(x), dtype=torch.get_default_dtype()) \
+                                         / self.timestep_limit
+        return torch.squeeze(self.network(torch.cat((x, ts[:, None]), dim=-1)))
 
     def update(self, trajs):
         obs = torch.cat([traj['observations'] for traj in trajs])
