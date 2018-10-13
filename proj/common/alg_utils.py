@@ -25,6 +25,16 @@ def compute_cumulative_returns(rewards, baselines, discount):
     return returns.to(rewards)
 
 
+# def compute_advantages(rewards, baselines, discount, *args):
+#     """
+#     Given returns R_t and baselines b(s_t), compute (monte carlo) advantage
+#     estimate A_t.
+#     """
+#     returns = compute_cumulative_returns(rewards, baselines, discount)
+#     gt = discount ** torch.arange(len(returns), dtype=torch.get_default_dtype())
+#     return gt * (returns - baselines[:-1])
+
+
 def compute_advantages(rewards, baselines, discount, gae_lambda):
     """
     Given returns R_t and baselines b(s_t), compute (generalized) advantage 
@@ -39,15 +49,15 @@ def compute_advantages(rewards, baselines, discount, gae_lambda):
     return advs.to(rewards)
 
 
+@torch.no_grad()
 def compute_pg_vars(trajs, policy, baseline, discount, gae_lambda):
     """
     Compute variables needed for various policy gradient algorithms
     """
     for traj in trajs:
         # Include the last observation here, if the trajectory is not finished
-        with torch.no_grad():
-            baselines = baseline(torch.cat(
-                [traj["observations"], traj["last_observation"].unsqueeze(0)]))
+        baselines = baseline(torch.cat(
+            [traj["observations"], traj["last_observation"].unsqueeze(0)]))
         if traj['finished']:
             # If already finished, the future cumulative rewards starting from
             # the final state is 0
@@ -65,8 +75,7 @@ def compute_pg_vars(trajs, policy, baseline, discount, gae_lambda):
     all_obs = torch.cat([traj['observations'] for traj in trajs])
     all_acts = torch.cat([traj['actions'] for traj in trajs])
     all_advs = torch.cat([traj['advantages'] for traj in trajs])
-    with torch.no_grad():
-        all_dists = policy.dists(all_obs)
+    all_dists = policy.dists(all_obs)
 
     # Normalizing the advantage values can make the algorithm more robust to
     # reward scaling
@@ -120,8 +129,7 @@ def log_baseline_statistics(trajs):
     # Specifically, compute the explained variance, defined as
     baselines = torch.cat([traj['baselines'] for traj in trajs])
     returns = torch.cat([traj['returns'] for traj in trajs])
-    logger.logkv('ExplainedVariance',
-                 explained_variance_1d(baselines, returns))
+    logger.logkv('ExplainedVariance', explained_variance_1d(baselines, returns))
 
 
 def log_action_distribution_statistics(dists):

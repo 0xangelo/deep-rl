@@ -118,4 +118,7 @@ pgdev/
 
 # data
 data/
-models/
+trash/
+
+# temporary
+tests/
