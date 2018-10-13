@@ -1,3 +1,3 @@
-from proj.algorithms.vanilla import vanilla
-from proj.algorithms.natural import natural
-from proj.algorithms.trpo import trpo
+from .vanilla import vanilla
+from .natural import natural
+from .trpo import trpo

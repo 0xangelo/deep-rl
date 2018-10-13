@@ -1,7 +1,6 @@
-from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions.kl import kl_divergence as kl
-from torch.autograd import grad
-from ..common.utils import conjugate_gradient, fisher_vector_product
+from torch.nn.utils import parameters_to_vector, vector_to_parameters
+from ..common.utils import conjugate_gradient, fisher_vector_product, flat_grad
 from ..common.alg_utils import *
 
 
@@ -33,7 +32,7 @@ def line_search(f, x0, dx, expected_improvement, y0=None, accept_ratio=0.1,
 
 def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(), 
          n_batch=2000, last_iter=-1, gamma=0.99, gae_lambda=0.97,
-         kl_sample_frac=0.5, delta=0.01, snapshot_saver=None):
+         kl_frac=0.5, delta=0.01, snapshot_saver=None):
 
     # Algorithm main loop
     with EnvPool(env, env_maker, n_envs=n_envs) as env_pool:
@@ -51,8 +50,8 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             )
 
             # subsample for kl divergence computation
-            if kl_sample_frac < 1.:
-                n_samples = int(kl_sample_frac*len(all_obs))
+            if kl_frac < 1.:
+                n_samples = int(kl_frac*len(all_obs))
                 indexes = torch.randperm(len(all_obs))[:n_samples]
                 subsamp_obs = torch.index_select(all_obs, 0, indexes)
                 subsamp_dists = policy.pdtype(
@@ -66,13 +65,10 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             surr_loss = -torch.mean(
                 new_dists.likelihood_ratios(all_dists, all_acts) * all_advs
             )
-            pol_grad = torch.cat([
-                g.view(-1) for g in grad(surr_loss, policy.parameters())
-            ])
+            pol_grad = flat_grad(surr_loss, policy.parameters())
             
             logger.info("Computing truncated natural gradient")
             F_0 = lambda v: fisher_vector_product(v, subsamp_obs, policy)
-
             descent_direction = conjugate_gradient(F_0, pol_grad)
             scale = torch.sqrt(
                 2.0 * delta *
@@ -92,10 +88,9 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                 avg_kl = kl(all_dists, new_dists).mean().item()
                 return surr_loss.item() + 1e100 * max(avg_kl - delta, 0.)
                 
-            flat_params = parameters_to_vector(policy.parameters())
             new_params = line_search(
                 f_barrier,
-                flat_params,
+                parameters_to_vector(policy.parameters()),
                 descent_step,
                 expected_improvement,
                 y0=surr_loss.item()
@@ -117,7 +112,7 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             if snapshot_saver is not None:
                 logger.info("Saving snapshot")
                 snapshot_saver.save_state(
-                    updt,
+                    updt+1,
                     dict(
                         alg=trpo,
                         alg_state=dict(
@@ -128,7 +123,7 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                             n_batch=n_batch,
                             n_envs=n_envs,
                             delta=delta,
-                            kl_sample_frac=kl_sample_frac,
+                            kl_frac=kl_frac,
                             last_iter=updt,
                             gamma=gamma,
                             gae_lambda=gae_lambda

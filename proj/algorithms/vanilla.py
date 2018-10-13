@@ -1,9 +1,11 @@
+from torch.nn.utils import parameters_to_vector, vector_to_parameters
+from ..common.utils import flat_grad
 from ..common.alg_utils import *
 
 
 def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             n_batch=2000, last_iter=-1, gamma=0.99, gae_lambda=0.97,
-            optimizer=None, snapshot_saver=None):
+            optimizer=None, scheduler=None, snapshot_saver=None):
 
     if optimizer is None:
         optimizer = torch.optim.Adam(policy.parameters())
@@ -24,17 +26,18 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             )
 
             logger.info("Applying policy gradient")
-            optimizer.zero_grad()
-            surr_loss = - torch.mean(
-                policy.dists(all_obs).log_prob(all_acts) * all_advs)
-            surr_loss.backward()
-            optimizer.step()
+            J0 = torch.mean(policy.dists(all_obs).log_prob(all_acts) * all_advs)
 
+            if scheduler: scheduler.step(updt)
+            optimizer.zero_grad()
+            (-J0).backward()
+            optimizer.step()
+            
             logger.info("Updating baseline")
             baseline.update(trajs)
 
             logger.info("Logging information")
-            logger.logkv("SurrLoss", surr_loss.item())
+            logger.logkv("Objective", J0.item())
             log_reward_statistics(env)
             log_baseline_statistics(trajs)
             log_action_distribution_statistics(all_dists)
@@ -43,7 +46,7 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             if snapshot_saver is not None:
                 logger.info("Saving snapshot")
                 snapshot_saver.save_state(
-                    updt,
+                    updt+1,
                     dict(
                         alg=vanilla,
                         alg_state=dict(
@@ -54,6 +57,7 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                             n_batch=n_batch,
                             n_envs=n_envs,
                             optimizer=optimizer,
+                            scheduler=scheduler,
                             last_iter=updt,
                             gamma=gamma,
                             gae_lambda=gae_lambda

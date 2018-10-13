@@ -1,12 +1,12 @@
-from torch.autograd import grad
 from torch.distributions.kl import kl_divergence as kl
-from ..common.utils import conjugate_gradient, fisher_vector_product
+from torch.nn.utils import parameters_to_vector as theta
+from ..common.utils import conjugate_gradient, fisher_vector_product, flat_grad
 from ..common.alg_utils import *
 
 
 def natural(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             n_batch=2000, last_iter=-1, gamma=0.99, gae_lambda=0.97,
-            kl_sample_frac=0.4, optimizer=None, snapshot_saver=None):
+            kl_frac=0.4, optimizer=None, scheduler=None, snapshot_saver=None):
 
     if optimizer is None:
         optimizer = torch.optim.Adam(policy.parameters())
@@ -27,8 +27,8 @@ def natural(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             )
 
             # subsample for kl divergence computation
-            if kl_sample_frac < 1.:
-                n_samples = int(kl_sample_frac*len(all_obs))
+            if kl_frac < 1.:
+                n_samples = int(kl_frac*len(all_obs))
                 indexes = torch.randperm(len(all_obs))[:n_samples]
                 subsamp_obs = torch.index_select(all_obs, 0, indexes)
                 subsamp_dists = policy.pdtype(
@@ -38,23 +38,16 @@ def natural(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                 subsamp_dists = all_dists
 
             logger.info("Computing policy gradient")
-            surr_loss = - torch.mean(
-                policy.dists(all_obs).log_prob(all_acts) * all_advs
-            )
-            pol_grad = torch.cat([
-                g.view(-1).data for g in grad(surr_loss, policy.parameters())
-            ])
+            J0 = torch.mean(policy.dists(all_obs).log_prob(all_acts) * all_advs)
+            pol_grad = flat_grad(J0, policy.parameters())
 
             logger.info("Applying truncated natural gradient")
             F_0 = lambda v: fisher_vector_product(v, subsamp_obs, policy)
-
             natural_gradient = conjugate_gradient(F_0, pol_grad)
+
+            if scheduler: scheduler.step(updt)
             optimizer.zero_grad()
-            offset = 0
-            for param in policy.parameters():
-                flat_grad = natural_gradient[offset:offset + param.numel()]
-                param.grad = flat_grad.view(param.shape).data
-                offset += param.numel()
+            theta(policy.parameters()).matmul(-natural_gradient).backward()
             optimizer.step()
 
             logger.info("Updating baseline")
@@ -72,7 +65,7 @@ def natural(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             if snapshot_saver is not None:
                 logger.info("Saving snapshot")
                 snapshot_saver.save_state(
-                    updt,
+                    updt+1,
                     dict(
                         alg=natural,
                         alg_state=dict(
@@ -83,6 +76,7 @@ def natural(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                             n_batch=n_batch,
                             n_envs=n_envs,
                             optimizer=optimizer,
+                            scheduler=scheduler,
                             last_iter=updt,
                             gamma=gamma,
                             gae_lambda=gae_lambda
