@@ -1,13 +1,15 @@
 import torch, torch.nn as nn, torch.distributions as dists
 
 
-class Normal(dists.Normal):
+class Normal(dists.Independent):
     def __init__(self, flatparam):
         loc, scale = torch.chunk(flatparam, 2, dim=1)
-        super().__init__(loc=loc, scale=scale)
+        base_distribution = dists.Normal(loc=loc, scale=scale)
+        reinterpreted_batch_ndims = 1
+        super().__init__(base_distribution, reinterpreted_batch_ndims)
         
     def flatparam(self):
-        return torch.cat((self.loc, self.scale), dim=1)
+        return torch.cat((self.base_dist.loc, self.base_dist.scale), dim=1)
 
     def likelihood_ratios(self, other, variables):
         return torch.exp(self.log_prob(variables) - other.log_prob(variables))
@@ -34,3 +36,14 @@ def make_pdtype(ac_space):
     else:
         raise NotImplementedError
 
+
+@dists.kl.register_kl(Normal, Normal)
+def _kl_diagnormal(dist1, dist2):
+    dist1_vars = dist1.variance
+    dist2_vars = dist2.variance
+
+    return torch.sum(
+        ((dist1.mean - dist2.mean).pow(2) + dist1_vars - dist2_vars) /
+        (2 * dist2_vars + 1e-8) + torch.log(dist2.stddev / dist1.stddev),
+        dim=-1
+    )
