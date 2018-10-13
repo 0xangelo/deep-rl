@@ -2,6 +2,9 @@ import sys, gym, torch, numpy as np, multiprocessing as mp, subprocess
 from .tqdm_util import trange
 from .observations import obs_to_tensor
 
+import tblib.pickling_support
+tblib.pickling_support.install()
+
 
 # ==============================
 # Parallel traj collecting
