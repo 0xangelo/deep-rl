@@ -6,6 +6,8 @@ import tblib.pickling_support
 tblib.pickling_support.install()
 
 
+BOOTSTRAP = True
+
 # ==============================
 # Parallel traj collecting
 # ==============================
@@ -19,6 +21,7 @@ def env_worker(env_maker, conn, n_worker_envs):
         try:
             if command == 'reset':
                 obs = []
+                dones = [False] * n_worker_envs
                 for env in envs:
                     obs.append(env.reset())
                 conn.send(('success', obs))
@@ -31,6 +34,16 @@ def env_worker(env_maker, conn, n_worker_envs):
                 actions = data
                 results = []
                 for env, action in zip(envs, actions):
+                    next_ob, rew, done, info = env.step(action)
+                    if done:
+                        info["last_observation"] = next_ob
+                        next_ob = env.reset()
+                    results.append((next_ob, rew, done, info))
+                conn.send(('success', results))
+            elif command == 'finish':
+                to_run = filter(lambda x: not x[2], zip(envs, data[0], data[1]))
+                results = []
+                for env, action, _ in to_run:
                     next_ob, rew, done, info = env.step(action)
                     if done:
                         info["last_observation"] = next_ob
@@ -76,6 +89,7 @@ class EnvPool(object):
         self.worker_env_offsets = np.concatenate(
             [[0], np.cumsum(self.n_worker_envs)[:-1]])
         self.last_obs = None
+        self.dones = None
 
     def start(self):
         workers = []
@@ -149,8 +163,34 @@ class EnvPool(object):
                 raise data[1].with_traceback(data[2])
         next_obs, rews, dones, infos = tuple(map(list, zip(*results)))
         next_obs = self.obs_to_tensor(next_obs)
-        self.last_obs = next_obs
+        self.last_obs, self.dones = next_obs, torch.tensor(dones)
         return next_obs, rews, dones, infos
+
+    def finish(self, actions):
+        empty = torch.empty(
+            (self.n_envs,) + actions[0].shape, dtype=actions.dtype)
+        empty[self.dones == 0] = actions
+        empty, dones = empty.cpu().numpy(), self.dones.cpu().numpy()
+        for idx, conn in enumerate(self.conns):
+            offset = self.worker_env_offsets[idx]
+            conn.send((
+                'finish',
+                (empty[offset:offset + self.n_worker_envs[idx]],
+                dones[offset:offset + self.n_worker_envs[idx]])
+            ))
+
+        results = []
+
+        for conn in self.conns:
+            status, data = conn.recv()
+            if status == 'success':
+                results.extend(data)
+            else:
+                raise data[1].with_traceback(data[2])
+        next_obs, rews, dones, infos = tuple(map(list, zip(*results)))
+        self.last_obs[self.dones == 0] = self.obs_to_tensor(next_obs)
+        self.dones[self.dones == 0] = torch.tensor(dones)
+        return self.last_obs[self.dones == 0], rews, dones, infos
 
     def seed(self, seeds):
         assert len(seeds) == self.n_envs
@@ -208,14 +248,13 @@ def parallel_collect_samples(env_pool, policy, num_samples):
                     desc="Sampling", dynamic_ncols=True):
         actions = policy.actions(obs)
         next_obs, rews, dones, infos = env_pool.step(actions)
-        for idx in range(env_pool.n_envs):
-            if partial_trajs[idx] is None:
-                partial_trajs[idx] = dict(
+        for idx, traj in enumerate(partial_trajs):
+            if traj is None:
+                partial_trajs[idx] = traj = dict(
                     observations=[],
                     actions=[],
                     rewards=[],
                 )
-            traj = partial_trajs[idx]
             traj["observations"].append(obs[idx])
             traj["actions"].append(actions[idx])
             traj["rewards"].append(rews[idx])
@@ -233,9 +272,9 @@ def parallel_collect_samples(env_pool, policy, num_samples):
                 partial_trajs[idx] = None
         obs = next_obs
 
-    for idx in range(env_pool.n_envs):
-        if partial_trajs[idx] is not None:
-            traj = partial_trajs[idx]
+    if BOOTSTRAP:
+        for idx, traj in enumerate(partial_trajs):
+            if traj is None: continue
             trajs.append(
                 dict(
                     observations=torch.stack(traj["observations"]),
@@ -245,6 +284,34 @@ def parallel_collect_samples(env_pool, policy, num_samples):
                     finished=False,
                 )
             )
+
+    else:
+        obs = env_pool.last_obs[env_pool.dones == 0]
+        while len(obs) > 0:
+            actions = policy.actions(obs)
+            next_obs, rews, dones, infos = env_pool.finish(actions)
+            num = 0
+            for idx, traj in enumerate(partial_trajs):
+                if traj is None: continue
+                traj["observations"].append(obs[num])
+                traj["actions"].append(actions[num])
+                traj["rewards"].append(rews[num])
+                if dones[num]:
+                    trajs.append(
+                        dict(
+                            observations=torch.stack(traj["observations"]),
+                            actions=torch.stack(traj["actions"]),
+                            rewards=torch.Tensor(traj["rewards"]),
+                            last_observation=env_pool.obs_to_tensor(
+                                infos[num]["last_observation"]),
+                            finished=True,
+                        )
+                    )
+                    partial_trajs[idx] = None
+                num += 1
+            obs = next_obs
+
+
     env_pool.flush()
     return trajs
 

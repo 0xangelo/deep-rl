@@ -53,9 +53,9 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             if kl_frac < 1.:
                 n_samples = int(kl_frac*len(all_obs))
                 indexes = torch.randperm(len(all_obs))[:n_samples]
-                subsamp_obs = torch.index_select(all_obs, 0, indexes)
+                subsamp_obs = all_obs.index_select(0, indexes)
                 subsamp_dists = policy.pdtype(
-                    torch.index_select(all_dists.flatparam(), 0, indexes))
+                    all_dists.flatparam().index_select(0, indexes))
             else:
                 subsamp_obs = all_obs
                 subsamp_dists = all_dists

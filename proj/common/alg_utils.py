@@ -3,7 +3,7 @@ from . import logger
 from .utils import explained_variance_1d
 from .tqdm_util import trange
 from .env_pool import EnvPool, parallel_collect_samples
-from .distributions import Normal, Categorical
+from .distributions import DiagNormal, Categorical
 
 # ==============================
 # Shared utilities
@@ -61,7 +61,7 @@ def compute_pg_vars(trajs, policy, baseline, discount, gae_lambda):
         if traj['finished']:
             # If already finished, the future cumulative rewards starting from
             # the final state is 0
-            baselines[-1] *= 0.
+            baselines[-1].zero_()
         # This is useful when fitting baselines. It uses the baseline prediction
         # of the last state value to perform Bellman backup if the trajectory is
         # not finished.
@@ -135,7 +135,7 @@ def log_baseline_statistics(trajs):
 def log_action_distribution_statistics(dists):
     logger.logkv('Entropy', dists.entropy().mean().item())
     logger.logkv('Perplexity', dists.perplexity().mean().item())
-    if isinstance(dists, Normal):
+    if isinstance(dists, DiagNormal):
         logger.logkv('AveragePolicyStd', dists.stddev.mean().item())
         for idx in range(dists.stddev.shape[-1]):
             logger.logkv('AveragePolicyStd[{}]'.format(idx),

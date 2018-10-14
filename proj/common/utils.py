@@ -1,8 +1,6 @@
 import gym, torch, random, numpy as np
 from torch.autograd import grad
 from torch.distributions.kl import kl_divergence as kl
-from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from .distributions import Normal, Categorical
 
 
 def set_global_seeds(seed):

@@ -2,8 +2,13 @@ import sys, contextlib
 from tqdm import tqdm, trange as _trange
 
 
+ORIG_STD_OUT_ERR = (sys.stdout, sys.stderr)
+
+
 class DummyTqdmFile(object):
-    """Dummy file-like that will write to tqdm"""
+    """
+    Dummy file-like that will write to tqdm
+    """
     file = None
 
     def __init__(self, file):
@@ -17,15 +22,14 @@ class DummyTqdmFile(object):
     def flush(self):
         return getattr(self.file, "flush", lambda: None)()
 
-ORIG_STD_OUT_ERR = (sys.stdout, sys.stderr)
 
 def std_out():
     return ORIG_STD_OUT_ERR[0]
 
+
 @contextlib.contextmanager
 def tqdm_out():
     try:
-        # sys.stdout = sys.stderr = DummyTqdmFile(orig_out_err[0])
         sys.stdout, sys.stderr = map(DummyTqdmFile, ORIG_STD_OUT_ERR)
         yield 
     # Relay exceptions

@@ -116,7 +116,7 @@ class FeedForwardPolicy(AbstractPolicy, FeedForwardModel):
         super().__init__(env, **kwargs)
         self.network = self.build_network()
         
-        if issubclass(self.pdtype, distributions.Normal):
+        if issubclass(self.pdtype, distributions.DiagNormal):
             self.logstd = nn.Parameter(torch.zeros(1, self.out_features))
             self.out_features *= 2
             def features(layers_out):

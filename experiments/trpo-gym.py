@@ -5,7 +5,7 @@ from proj.common.saver import SnapshotSaver
 from proj.common.utils import set_global_seeds
 from proj.common.tqdm_util import tqdm_out
 from proj.algorithms import trpo
-from make_model import make_policy, make_baseline
+from config import make_policy, make_baseline
 
 
 @click.command()

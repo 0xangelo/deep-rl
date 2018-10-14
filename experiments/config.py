@@ -1,5 +1,8 @@
 import torch
 import proj.common.models as models
+import proj.common.env_pool as env_pool
+
+env_pool.BOOTSTRAP = False
 
 
 def make_policy(env):

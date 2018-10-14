@@ -1,7 +1,7 @@
 import torch, torch.nn as nn, torch.distributions as dists
 
 
-class Normal(dists.Independent):
+class DiagNormal(dists.Independent):
     def __init__(self, flatparam):
         loc, scale = torch.chunk(flatparam, 2, dim=1)
         base_distribution = dists.Normal(loc=loc, scale=scale)
@@ -30,14 +30,14 @@ def make_pdtype(ac_space):
     from gym import spaces
     if isinstance(ac_space, spaces.Box):
         assert len(ac_space.shape) == 1
-        return Normal
+        return DiagNormal
     elif isinstance(ac_space, spaces.Discrete):
         return Categorical
     else:
         raise NotImplementedError
 
 
-@dists.kl.register_kl(Normal, Normal)
+@dists.kl.register_kl(DiagNormal, DiagNormal)
 def _kl_diagnormal(dist1, dist2):
     dist1_vars = dist1.variance
     dist2_vars = dist2.variance
