@@ -19,7 +19,7 @@ def natural(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             logger.logkv("Iteration", updt)
 
             logger.info("Start collecting samples")
-            trajs = parallel_collect_samples(env_pool, policy, n_batch)
+            trajs = parallel_collect_experience(env_pool, policy, n_batch)
 
             logger.info("Computing policy gradient variables")
             all_obs, all_acts, all_advs, all_dists = compute_pg_vars(

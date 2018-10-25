@@ -37,11 +37,11 @@ class MlpModel(Model, FeedForwardModel):
         self.hidden_sizes = hidden_sizes
 
     def build_network(self):
-        layers, in_sizes = [], [self.in_features] + self.hidden_sizes[:-1]
-        for in_features, out_features in zip(in_sizes, self.hidden_sizes):
+        layers, in_sizes = [], [self.in_features] + self.hidden_sizes
+        for in_features, out_features in zip(in_sizes[:-1], in_sizes[1:]):
             layers.append(nn.Linear(in_features, out_features))
             layers.append(self.activation())
-        layers.append(nn.Linear(self.hidden_sizes[-1], self.out_features))
+        layers.append(nn.Linear(in_sizes[-1], self.out_features))
             
         return nn.Sequential(*layers) 
 

@@ -206,10 +206,10 @@ class Logger(object):
     # Current logger being used by the free functions above
     CURRENT = None
 
-    def __init__(self, dir, output_formats):
+    def __init__(self, path, output_formats):
         self.name2val = OrderedDict()  # values this iteration
         self.level = INFO
-        self.dir = dir
+        self.path = path
         self.output_formats = output_formats
 
     # Logging API, forwarded
@@ -234,7 +234,7 @@ class Logger(object):
         self.level = level
 
     def get_dir(self):
-        return self.dir
+        return self.path
 
     def close(self):
         for fmt in self.output_formats:
@@ -250,7 +250,7 @@ class Logger(object):
 # ================================================================
 
 Logger.DEFAULT = Logger(
-    output_formats=[HumanOutputFormat(sys.stdout)], dir=None)
+    output_formats=[HumanOutputFormat(sys.stdout)], path=None)
 Logger.CURRENT = Logger.DEFAULT
 
 
@@ -261,22 +261,27 @@ class session(object):
     # Set to a LoggerContext object using enter/exit or context manager
     CURRENT = None  
 
-    def __init__(self, dir, format_strs=None):
-        self.dir = dir
+    def __init__(self, path, format_strs=None, variant={}):
+        self.path = path
         if format_strs is None:
             format_strs = LOG_OUTPUT_FORMATS
-        self.output_formats = [make_output_format(f, dir) for f in format_strs]
+        self.output_formats = [make_output_format(f, path) for f in format_strs]
+
+        with open(osp.join(path, 'variant.json'), 'at') as fp:
+            json.dump(variant, fp)
+
 
     def __enter__(self):
         os.makedirs(self.evaluation_dir(), exist_ok=True)
-        Logger.CURRENT = Logger(dir=self.dir, output_formats=self.output_formats)
+        Logger.CURRENT = Logger(
+            path=self.path, output_formats=self.output_formats)
 
     def __exit__(self, *args):
         Logger.CURRENT.close()
         Logger.CURRENT = Logger.DEFAULT
 
     def evaluation_dir(self):
-        return self.dir
+        return self.path
 
 
 # ================================================================
@@ -287,10 +292,10 @@ def _demo():
     debug("shouldn't appear")
     set_level(DEBUG)
     debug("should appear")
-    dir = "/tmp/testlogging"
-    if os.path.exists(dir):
-        shutil.rmtree(dir)
-    with session(dir=dir):
+    path = "/tmp/testlogging"
+    if os.path.exists(path):
+        shutil.rmtree(path)
+    with session(path=path):
         logkv("a", 3)
         logkv("b", 2.5)
         dumpkvs()

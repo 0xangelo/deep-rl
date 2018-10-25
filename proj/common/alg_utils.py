@@ -2,7 +2,7 @@ import gym, torch, numpy as np, multiprocessing as mp
 from . import logger
 from .utils import explained_variance_1d
 from .tqdm_util import trange
-from .env_pool import EnvPool, parallel_collect_samples
+from .env_pool import EnvPool, parallel_collect_experience
 from .distributions import DiagNormal, Categorical
 
 # ==============================

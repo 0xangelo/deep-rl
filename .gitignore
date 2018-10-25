@@ -118,7 +118,7 @@ pgdev/
 
 # data
 data/
-trash/
+trash*
 
 # temporary
 tests/

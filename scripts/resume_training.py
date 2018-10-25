@@ -4,7 +4,9 @@ import time
 from proj.common import logger
 from proj.common.saver import SnapshotSaver
 from proj.common.tqdm_util import tqdm_out
+import proj.common.env_pool as pool
 
+pool.episodic = True
 
 @click.command()
 @click.argument("path")

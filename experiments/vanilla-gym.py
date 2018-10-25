@@ -1,10 +1,11 @@
-import os, json, torch, click
+import os, torch, click
 from proj.common import logger
 from proj.common.env_makers import EnvMaker
 from proj.common.saver import SnapshotSaver
 from proj.common.utils import set_global_seeds
 from proj.common.tqdm_util import tqdm_out
 from proj.algorithms import vanilla
+import proj.common.env_pool as pool
 from config import make_policy, make_baseline, make_optim
 
 
@@ -12,6 +13,8 @@ from config import make_policy, make_baseline, make_optim
 @click.argument("env")
 @click.option("--log_dir", help="where to save checkpoint and progress data",
               type=str, default='data/')
+@click.option("--episodic", help="enforce all episodes end",
+              is_flag=True)
 @click.option("--n_iter", help="number of iterations to run",
               type=int, default=100)
 @click.option("--n_batch", help="number of samples per iterations",
@@ -26,22 +29,20 @@ from config import make_policy, make_baseline, make_optim
               type=int, default=10)
 @click.option("--seed", help="for repeatability",
               type=int, default=None)
-@click.option("--lr", help="learning rate for Adam",
-              type=float, default=1e-3)
-def main(env, log_dir, n_iter, n_batch, n_envs, gamma, gae_lambda, interval,
-         seed, lr):
+def main(env, log_dir, episodic, n_iter, n_batch, n_envs, gamma, gae_lambda,
+         interval, seed):
     """Runs vanilla pg on given environment with specified parameters."""
     
+    proto_dir = log_dir + env + '/' + '{}/' + str(seed) + '/'
+    env_maker = EnvMaker(env)
+    if episodic:
+        pool.episodic = True
+
     seed = set_global_seeds(seed)
-    exp_name = 'vanilla/' + env
-    log_dir += exp_name + '/' + str(seed) + '/'
+    log_dir = proto_dir.format('vanilla')
+    variant = dict(exp_name='vanilla', seed=seed)
     os.system("rm -rf {}".format(log_dir))
-
-    with tqdm_out(), logger.session(log_dir):
-        with open(os.path.join(log_dir, 'variant.json'), 'at') as fp:
-            json.dump(dict(exp_name=exp_name, seed=seed), fp)
-
-        env_maker = EnvMaker(env)
+    with tqdm_out(), logger.session(log_dir, variant=variant):
         env = env_maker.make()
         policy = make_policy(env)
         baseline = make_baseline(env)

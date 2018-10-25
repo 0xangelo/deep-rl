@@ -1,21 +1,25 @@
 import torch
+from proj.common import logger
 import proj.common.models as models
-import proj.common.env_pool as env_pool
-
-env_pool.BOOTSTRAP = False
-
 
 def make_policy(env):
-    return models.MlpPolicy(env)
+    return models.MlpPolicy(env, hidden_sizes=[30,30,30], activation=torch.nn.ELU)
 
 
 def make_baseline(env):
-    return models.MlpBaseline(env)
+    return models.MlpBaseline(env, hidden_sizes=[10], activation=torch.nn.ELU)
 
 
 def make_optim(parameters):
-    optimizer = torch.optim.SGD(parameters, lr=1.0)
-    harmonic = lambda epoch: 1/(epoch//3 + 1)
-    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, harmonic)
+    if 'natural' in logger.get_dir():
+        optimizer = torch.optim.SGD(parameters, lr=1.0)
+        harmonic = lambda epoch: 1/(epoch//6 + 1)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, harmonic)
+    else:
+        optimizer = torch.optim.SGD(parameters, lr=1.0)
+        harmonic = lambda epoch: 1/(epoch//6 + 1)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, harmonic)
+        # optimizer = torch.optim.Adam(parameters, lr=1e-2)
+        # scheduler = None
     return (optimizer, scheduler)
 
