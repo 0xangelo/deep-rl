@@ -88,14 +88,14 @@ class EpisodicEnvPool(object):
             worker = mp.Process(target=episodic_env_worker, args=(
                 self.env_maker, worker_conn, self.n_worker_envs[idx]))
             worker.start()
-            # # pin each worker to a single core
-            # if sys.platform == 'linux':
-            #     subprocess.check_call(
-            #         ["taskset", "-p", "-c",
-            #             str(idx % mp.cpu_count()), str(worker.pid)],
-            #         stdout=subprocess.DEVNULL,
-            #         stderr=subprocess.DEVNULL,
-            #     )
+            # pin each worker to a single core
+            if sys.platform == 'linux':
+                subprocess.check_call(
+                    ["taskset", "-p", "-c",
+                        str(idx % mp.cpu_count()), str(worker.pid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             workers.append(worker)
             conns.append(master_conn)
 
@@ -321,14 +321,14 @@ class SamplingEnvPool(object):
             worker = mp.Process(target=sampling_env_worker, args=(
                 self.env_maker, worker_conn, self.n_worker_envs[idx]))
             worker.start()
-            # # pin each worker to a single core
-            # if sys.platform == 'linux':
-            #     subprocess.check_call(
-            #         ["taskset", "-p", "-c",
-            #             str(idx % mp.cpu_count()), str(worker.pid)],
-            #         stdout=subprocess.DEVNULL,
-            #         stderr=subprocess.DEVNULL,
-            #     )
+            # pin each worker to a single core
+            if sys.platform == 'linux':
+                subprocess.check_call(
+                    ["taskset", "-p", "-c",
+                        str(idx % mp.cpu_count()), str(worker.pid)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
             workers.append(worker)
             conns.append(master_conn)
 
