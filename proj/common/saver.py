@@ -1,4 +1,4 @@
-import os, cloudpickle
+import os, cloudpickle.cloudpickle as cpkl, torch
 
 
 # ==============================
@@ -24,29 +24,37 @@ class SnapshotSaver(object):
         return os.path.join(self.path, "snapshots")
 
     def get_snapshot_path(self, index):
-        if self.latest_only:
-            return os.path.join(self.snapshots_folder, "latest.pkl")
-        else:
-            return os.path.join(self.snapshots_folder, "%d.pkl" % index)
+        return os.path.join(
+            self.snapshots_folder,
+            "latest.pkl" if self.latest_only else "%d.pkl" % index
+        )
 
     def save_state(self, index, state):
         if index % self.interval == 0:
             file_path = self.get_snapshot_path(index)
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             with open(file_path, "wb") as f:
-                cloudpickle.dump(state, f, protocol=-1)
+                torch.save(
+                    state,
+                    f,
+                    pickle_module=cpkl,
+                    pickle_protocol=-1
+                )
 
     def get_state(self, index=None):
+        device = torch.device('cpu')
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
         if self.latest_only:
             try:
                 with open(self.get_snapshot_path(0), "rb") as f:
-                    return cloudpickle.load(f)
+                    return torch.load(f, map_location=device)
             except EOFError:
                 pass
         elif index is not None:
             try:
                 with open(self.get_snapshot_path(index), "rb") as f:
-                    return cloudpickle.load(f)
+                    return torch.load(f, map_location=device)
             except EOFError:
                 pass
         else:
@@ -57,7 +65,7 @@ class SnapshotSaver(object):
                 file_path = os.path.join(self.snapshots_folder, file)
                 try:
                     with open(file_path, "rb") as f:
-                        return cloudpickle.load(f)
+                        return torch.load(f, map_location=device)
                 except EOFError:
                     pass
 

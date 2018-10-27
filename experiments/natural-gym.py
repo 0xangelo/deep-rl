@@ -48,7 +48,7 @@ def main(env, episodic, log_dir, n_iter, n_batch, n_envs, gamma, gae_lambda,
         env = env_maker.make()
         policy = make_policy(env)
         baseline = make_baseline(env)
-        optimizer, scheduler = make_optim(policy.parameters())
+        optimizer, scheduler = make_optim(policy)
 
         natural(
             env=env,

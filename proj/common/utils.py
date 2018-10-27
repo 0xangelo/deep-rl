@@ -60,3 +60,9 @@ def explained_variance_1d(ypred, y):
     return 1 - torch.var(y - ypred).item() / (vary + 1e-8)
 
 
+class HSeries:
+    def __init__(self, decay):
+        self.decay = decay
+
+    def __call__(self, epoch):
+        return 1 / (epoch // self.decay + 1)

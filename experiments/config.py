@@ -1,5 +1,6 @@
 import torch
 from proj.common import logger
+from proj.common.utils import HSeries
 import proj.common.models as models
 
 def make_policy(env):
@@ -10,16 +11,12 @@ def make_baseline(env):
     return models.MlpBaseline(env, hidden_sizes=[10], activation=torch.nn.ELU)
 
 
-def make_optim(parameters):
+def make_optim(module):
     if 'natural' in logger.get_dir():
-        optimizer = torch.optim.SGD(parameters, lr=1.0)
-        harmonic = lambda epoch: 1/(epoch//6 + 1)
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, harmonic)
+        optimizer = torch.optim.SGD(module.parameters(), lr=1.0)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, HSeries(6))
     else:
-        optimizer = torch.optim.SGD(parameters, lr=1.0)
-        harmonic = lambda epoch: 1/(epoch//6 + 1)
-        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, harmonic)
-        # optimizer = torch.optim.Adam(parameters, lr=1e-2)
-        # scheduler = None
+        optimizer = torch.optim.SGD(module.parameters(), lr=1.0)
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, HSeries(6))
     return (optimizer, scheduler)
 
