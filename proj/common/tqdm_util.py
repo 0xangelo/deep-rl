@@ -42,16 +42,17 @@ def tqdm_out():
 
 def trange(*args, **kwargs):
     """
-    A replacement for tqdm.trange, automatically setting file=std_out() if not
+    A wrapper for tqdm.trange, automatically setting file=std_out() if not
     specified.
     """
-    if 'file' in kwargs: return _trange(*args, **kwargs)
-    return _trange(*args, file=std_out(), **kwargs)
+    if 'file' not in kwargs: kwargs['file'] = std_out()
+    return _trange(*args, **kwargs)
+
 
 def tqdm(*args, **kwargs):
     """
-    A replacement for tqdm.tqdm, automatically setting file=std_out() if not
+    A wrapper for tqdm.tqdm, automatically setting file=std_out() if not
     specified.
     """
-    if 'file' in kwargs: return _tqdm(*args, **kwargs)
-    return _tqdm(*args, file=std_out(), **kwargs)
+    if 'file' not in kwargs: kwargs['file'] = std_out()
+    return _tqdm(*args, **kwargs)

@@ -1,4 +1,5 @@
 import gym, torch, click, time, numpy as np, pprint
+from proj.common.models import restore_models
 from proj.common.saver import SnapshotSaver
 
 
@@ -24,8 +25,10 @@ def main(path, index, runs, render):
             time.sleep(1)
         
     alg_state = state['alg_state']
-    pprint.pprint(alg_state, indent=4)
     env = alg_state['env_maker'].make(pytorch=True)
+    alg_state.update(restore_models(state['models'], env))
+    pprint.pprint(alg_state, indent=4)
+
     policy = alg_state['policy']
     for _ in range(runs):
         ob = env.reset()

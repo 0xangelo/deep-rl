@@ -3,10 +3,10 @@ import click
 import time
 from proj.common import logger
 from proj.common.saver import SnapshotSaver
+from proj.common.models import restore_models
 from proj.common.tqdm_util import tqdm_out
 import proj.common.env_pool as pool
 
-pool.episodic = True
 
 @click.command()
 @click.argument("path")
@@ -28,8 +28,10 @@ def main(path, add):
     with tqdm_out(), logger.session(path):
         alg = state['alg']
         alg_state = state['alg_state']
-        alg_state['n_iter'] += add
+        
         env = alg_state['env_maker'].make()
+        alg_state['n_iter'] += add
+        alg_state.update(restore_models(state['models'], env))
 
         alg(
             env=env,

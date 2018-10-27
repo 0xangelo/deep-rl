@@ -117,8 +117,6 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                         alg=trpo,
                         alg_state=dict(
                             env_maker=env_maker,
-                            policy=policy,
-                            baseline=baseline,
                             n_iter=n_iter,
                             n_batch=n_batch,
                             n_envs=n_envs,
@@ -127,6 +125,7 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                             last_iter=updt,
                             gamma=gamma,
                             gae_lambda=gae_lambda
-                        )
+                        ),
+                        models=model_states(policy, baseline)
                     )
                 )

@@ -1,12 +1,14 @@
 import gym, torch, numpy as np, multiprocessing as mp
 from . import logger
-from .utils import explained_variance_1d
+from .utils import explained_variance_1d, flat_grad
 from .tqdm_util import trange
 from .env_pool import EnvPool, parallel_collect_experience
 from .distributions import DiagNormal, Categorical
+from .models import model_states
+
 
 # ==============================
-# Shared utilities
+# Variables and estimation
 # ==============================
 
 def compute_cumulative_returns(rewards, baselines, discount):

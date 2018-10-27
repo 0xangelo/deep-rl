@@ -261,14 +261,15 @@ class session(object):
     # Set to a LoggerContext object using enter/exit or context manager
     CURRENT = None  
 
-    def __init__(self, path, format_strs=None, variant={}):
+    def __init__(self, path, format_strs=None, variant=None):
         self.path = path
         if format_strs is None:
             format_strs = LOG_OUTPUT_FORMATS
         self.output_formats = [make_output_format(f, path) for f in format_strs]
 
-        with open(osp.join(path, 'variant.json'), 'at') as fp:
-            json.dump(variant, fp)
+        if variant is not None:
+            with open(osp.join(path, 'variant.json'), 'at') as fp:
+                json.dump(variant, fp)
 
 
     def __enter__(self):

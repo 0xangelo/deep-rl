@@ -1,7 +1,4 @@
-from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from ..common.utils import flat_grad
 from ..common.alg_utils import *
-
 
 def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             n_batch=2000, last_iter=-1, gamma=0.99, gae_lambda=0.97,
@@ -9,6 +6,7 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
 
     if optimizer is None:
         optimizer = torch.optim.Adam(policy.parameters())
+        scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 1)
 
     # Algorithm main loop
     with EnvPool(env, env_maker, n_envs=n_envs) as env_pool:
@@ -28,7 +26,7 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             logger.info("Applying policy gradient")
             J0 = torch.mean(policy.dists(all_obs).log_prob(all_acts) * all_advs)
 
-            if scheduler: scheduler.step(updt)
+            scheduler.step(updt)
             optimizer.zero_grad()
             (-J0).backward()
             optimizer.step()
@@ -51,16 +49,15 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                         alg=vanilla,
                         alg_state=dict(
                             env_maker=env_maker,
-                            policy=policy,
-                            baseline=baseline,
                             n_iter=n_iter,
                             n_batch=n_batch,
                             n_envs=n_envs,
-                            optimizer=optimizer,
-                            scheduler=scheduler,
                             last_iter=updt,
                             gamma=gamma,
                             gae_lambda=gae_lambda
+                        ),
+                        models=model_states(
+                            policy, baseline, optimizer, scheduler
                         )
                     )
                 )

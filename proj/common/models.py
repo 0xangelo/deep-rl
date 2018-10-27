@@ -1,4 +1,4 @@
-import torch, torch.nn as nn, numpy as np
+import math, functools, torch, torch.nn as nn
 from abc import ABC, abstractmethod
 from . import distributions
 from .observations import n_features
@@ -6,6 +6,52 @@ from .observations import n_features
 torch.set_default_tensor_type(torch.FloatTensor)
 if torch.cuda.is_available():
     torch.set_default_tensor_type(torch.cuda.FloatTensor)
+
+
+class Config(object):
+    def __init__(self, *args, **kwargs):
+        self.config = kwargs
+        super().__init__(*args, **kwargs)
+
+
+def model_states(*models):
+    states = {}
+    for model in models:
+        class_type, state_dict = type(model), model.state_dict()
+        if isinstance(model, AbstractPolicy):
+            states['policy'] = (class_type, model.config, state_dict)
+        elif isinstance(model, AbstractBaseline):
+            states['baseline'] = (class_type, model.config, state_dict)
+        elif isinstance(model, torch.optim.Optimizer):
+            states['optimizer'] = (class_type, {}, state_dict)
+        else:
+            states['scheduler'] = (class_type, {}, state_dict)
+    return states
+
+
+def restore_models(model_states, env):
+    models = {}
+    class_type, config, state_dict = model_states['policy']
+    config['env'] = env
+    models['policy'] = class_type(**config)
+    models['policy'].load_state_dict(state_dict)
+
+    class_type, config, state_dict = model_states['baseline']
+    config['env'] = env
+    models['baseline'] = class_type(**config)
+    models['baseline'].load_state_dict(state_dict)
+
+    if 'optimizer' in models:
+        class_type, config, state_dict = model_states['optimizer']
+        models['optimizer'] = class_type(models['policy'].parameters())
+        models['optimizer'].load_state_dict(state_dict)
+
+        class_type, config, state_dict = models_states['scheduler']
+        config['optimizer'] = models['optimizer']
+        models['scheduler'] = class_type(**config)
+        models['scheduler'].load_state_dict(state_dict)
+    return models
+    
 
 # ==============================
 # Models
@@ -48,7 +94,7 @@ class MlpModel(Model, FeedForwardModel):
     @staticmethod
     def initialize(module):
         if isinstance(module, nn.Linear):
-            nn.init.orthogonal_(module.weight, gain=np.sqrt(2))
+            nn.init.orthogonal_(module.weight, gain=math.sqrt(2))
             nn.init.constant_(module.bias, 0)        
 
 
@@ -142,7 +188,7 @@ class FeedForwardPolicy(AbstractPolicy, FeedForwardModel):
         return self.pdtype(self(obs))
         
 
-class MlpPolicy(FeedForwardPolicy, MlpModel):
+class MlpPolicy(Config, FeedForwardPolicy, MlpModel):
     pass
 
 # ==============================
@@ -174,7 +220,7 @@ class AbstractBaseline(ABC):
         pass
 
 
-class ZeroBaseline(AbstractBaseline, Model):
+class ZeroBaseline(Config, AbstractBaseline, Model):
     def forward(self, x):
         return torch.zeros(len(x))
 
@@ -217,5 +263,5 @@ class FeedForwardBaseline(AbstractBaseline, FeedForwardModel):
         optimizer.step(closure)
 
 
-class MlpBaseline(FeedForwardBaseline, MlpModel):
+class MlpBaseline(Config, FeedForwardBaseline, MlpModel):
     pass

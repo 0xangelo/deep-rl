@@ -10,6 +10,7 @@ def natural(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
 
     if optimizer is None:
         optimizer = torch.optim.Adam(policy.parameters())
+        scheduler = torch.optimlr_scheduler.ExponentialLR(optimizer, 1)
 
     # Algorithm main loop
     with EnvPool(env, env_maker, n_envs=n_envs) as env_pool:
@@ -45,7 +46,7 @@ def natural(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             F_0 = lambda v: fisher_vector_product(v, subsamp_obs, policy)
             natural_gradient = conjugate_gradient(F_0, pol_grad)
 
-            if scheduler: scheduler.step(updt)
+            scheduler.step(updt)
             optimizer.zero_grad()
             theta(policy.parameters()).matmul(-natural_gradient).backward()
             optimizer.step()
@@ -70,16 +71,15 @@ def natural(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                         alg=natural,
                         alg_state=dict(
                             env_maker=env_maker,
-                            policy=policy,
-                            baseline=baseline,
                             n_iter=n_iter,
                             n_batch=n_batch,
                             n_envs=n_envs,
-                            optimizer=optimizer,
-                            scheduler=scheduler,
                             last_iter=updt,
                             gamma=gamma,
                             gae_lambda=gae_lambda
+                        ),
+                        models=model_states(
+                            policy, baseline, optimizer, scheduler
                         )
                     )
                 )
