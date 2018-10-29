@@ -116,8 +116,6 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                     dict(
                         alg=dict(last_iter=updt),
                         policy=policy.state_dict(),
-                        baseline=baseline.state_dict(),
-                        optimizer=optimizer.state_dict(),
-                        scheduler=scheduler.state_dict(),
+                        baseline=baseline.state_dict()
                     )
                 )

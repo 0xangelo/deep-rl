@@ -1,6 +1,7 @@
 import click
-from proj.common.env_makers import EnvMaker
 from proj.algorithms import vanilla, natural, trpo, train
+from proj.common.utils import set_global_seeds
+from proj.common.env_makers import EnvMaker
 from defaults import models_config
 
 @click.command()
@@ -32,18 +33,19 @@ def main(env, log_dir, episodic, n_iter, n_batch, n_envs, gamma, gae_lambda,
     """
     Runs the algorithms on given environment with specified parameters.
     """
+    seed = set_global_seeds(seed)
     proto_dir = log_dir + env + '/{alg}/{seed}/'
 
     env_maker = EnvMaker(env)
     types, args = models_config()
     args['alg'] = dict(
-            env_maker=env_maker,
-            n_iter=n_iter,
-            n_batch=n_batch,
-            n_envs=n_envs,
-            gamma=gamma,
-            gae_lambda=gae_lambda
-        )
+        env_maker=env_maker,
+        n_iter=n_iter,
+        n_batch=n_batch,
+        n_envs=n_envs,
+        gamma=gamma,
+        gae_lambda=gae_lambda
+    )
     config = dict(
         seed=seed,
         episodic=episodic,
@@ -54,10 +56,12 @@ def main(env, log_dir, episodic, n_iter, n_batch, n_envs, gamma, gae_lambda,
     types['alg'] = vanilla
     train(config, proto_dir, interval=interval)
 
+    seed = set_global_seeds(seed)
     types['alg'] = natural
     args['alg']['kl_frac'] = kl_frac
     train(config, proto_dir, interval=interval)
 
+    seed = set_global_seeds(seed)
     types['alg'] = trpo
     args['alg']['delta'] = delta
     del types['optimizer'], args['optimizer']
