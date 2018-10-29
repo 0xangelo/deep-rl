@@ -4,7 +4,6 @@ from .utils import explained_variance_1d, flat_grad
 from .tqdm_util import trange
 from .env_pool import EnvPool, parallel_collect_experience
 from .distributions import DiagNormal, Categorical
-from .models import model_states
 
 
 # ==============================

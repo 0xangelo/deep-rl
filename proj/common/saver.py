@@ -6,9 +6,10 @@ import os, cloudpickle.cloudpickle as cpkl, torch
 # ==============================
 
 class SnapshotSaver(object):
-    def __init__(self, path, interval=1, latest_only=None):
+    def __init__(self, path, config=None, interval=1, latest_only=None):
         self.path = path
         self.interval = interval
+
         if latest_only is None:
             latest_only = True
             snapshots_folder = os.path.join(path, "snapshots")
@@ -18,6 +19,19 @@ class SnapshotSaver(object):
                 elif len(os.listdir(snapshots_folder)) > 0:
                     latest_only = False
         self.latest_only = latest_only
+
+        file_path = os.path.join(path, "config.pkl")
+        if os.path.exists(file_path) is False:
+            if config is None:
+                raise ValueError("Missing experiment config")
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, "wb") as f:
+                torch.save(
+                    config,
+                    f,
+                    pickle_module=cpkl,
+                    pickle_protocol=-1
+                )
 
     @property
     def snapshots_folder(self):
@@ -45,16 +59,19 @@ class SnapshotSaver(object):
         device = torch.device('cpu')
         if torch.cuda.is_available():
             device = torch.device('cuda')
+        with open(os.path.join(self.path, "config.pkl"), "rb") as f:
+            config = torch.load(f, map_location=device)
+
         if self.latest_only:
             try:
                 with open(self.get_snapshot_path(0), "rb") as f:
-                    return torch.load(f, map_location=device)
+                    return config, torch.load(f, map_location=device)
             except EOFError:
                 pass
         elif index is not None:
             try:
                 with open(self.get_snapshot_path(index), "rb") as f:
-                    return torch.load(f, map_location=device)
+                    return config, torch.load(f, map_location=device)
             except EOFError:
                 pass
         else:
@@ -65,7 +82,7 @@ class SnapshotSaver(object):
                 file_path = os.path.join(self.snapshots_folder, file)
                 try:
                     with open(file_path, "rb") as f:
-                        return torch.load(f, map_location=device)
+                        return config, torch.load(f, map_location=device)
                 except EOFError:
                     pass
 

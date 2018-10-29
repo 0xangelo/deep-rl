@@ -1,13 +1,7 @@
-import os, torch, click
-from proj.common import logger
+import click
 from proj.common.env_makers import EnvMaker
-from proj.common.saver import SnapshotSaver
-from proj.common.utils import set_global_seeds
-from proj.common.tqdm_util import tqdm_out
-from proj.algorithms import vanilla, natural, trpo
-import proj.common.env_pool as pool
-from config import make_policy, make_baseline, make_optim
-
+from proj.algorithms import vanilla, natural, trpo, train
+from defaults import models_config
 
 @click.command()
 @click.argument("env")
@@ -38,86 +32,38 @@ def main(env, log_dir, episodic, n_iter, n_batch, n_envs, gamma, gae_lambda,
     """
     Runs the algorithms on given environment with specified parameters.
     """
-    
-    proto_dir = log_dir + env + '/' + '{}/' + str(seed) + '/'
+    proto_dir = log_dir + env + '/{alg}/{seed}/'
+
     env_maker = EnvMaker(env)
-    if episodic:
-        pool.episodic = True
-
-    seed = set_global_seeds(seed)
-    log_dir = proto_dir.format('vanilla')
-    variant = dict(exp_name='vanilla', seed=seed)
-    os.system("rm -rf {}".format(log_dir))
-    with tqdm_out(), logger.session(log_dir, variant=variant):
-        env = env_maker.make()
-        policy = make_policy(env)
-        baseline = make_baseline(env)
-        optimizer, scheduler = make_optim(policy)
-
-        vanilla(
-            env=env,
+    types, args = models_config()
+    args['alg'] = dict(
             env_maker=env_maker,
-            policy=policy,
-            baseline=baseline,
             n_iter=n_iter,
             n_batch=n_batch,
             n_envs=n_envs,
             gamma=gamma,
-            gae_lambda=gae_lambda,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            snapshot_saver=SnapshotSaver(log_dir, interval=interval)
+            gae_lambda=gae_lambda
         )
+    config = dict(
+        seed=seed,
+        episodic=episodic,
+        types=types,
+        args=args
+    )
 
-    seed = set_global_seeds(seed)
-    log_dir = proto_dir.format('natural')
-    variant = dict(exp_name='natural', seed=seed)
-    os.system("rm -rf {}".format(log_dir))
-    with tqdm_out(), logger.session(log_dir, variant=variant):
-        env = env_maker.make()
-        policy = make_policy(env)
-        baseline = make_baseline(env)
-        optimizer, scheduler = make_optim(policy)
+    types['alg'] = vanilla
+    train(config, proto_dir, interval=interval)
 
-        natural(
-            env=env,
-            env_maker=env_maker,
-            policy=policy,
-            baseline=baseline,
-            n_iter=n_iter,
-            n_batch=n_batch,
-            n_envs=n_envs,
-            gamma=gamma,
-            gae_lambda=gae_lambda,
-            optimizer=optimizer,
-            scheduler=scheduler,
-            kl_frac=kl_frac,
-            snapshot_saver=SnapshotSaver(log_dir, interval=interval)
-        )
+    types['alg'] = natural
+    args['alg']['kl_frac'] = kl_frac
+    train(config, proto_dir, interval=interval)
 
-    seed = set_global_seeds(seed)
-    log_dir = proto_dir.format('trpo')
-    variant = dict(exp_name='trpo', seed=seed)
-    os.system("rm -rf {}".format(log_dir))
-    with tqdm_out(), logger.session(log_dir, variant=variant):
-        env = env_maker.make()
-        policy = make_policy(env)
-        baseline = make_baseline(env)
+    types['alg'] = trpo
+    args['alg']['delta'] = delta
+    del types['optimizer'], args['optimizer']
+    del types['scheduler'], args['scheduler']
+    train(config, proto_dir, interval=interval)
 
-        trpo(
-            env=env,
-            env_maker=env_maker,
-            policy=policy,
-            baseline=baseline,
-            n_iter=n_iter,
-            n_batch=n_batch,
-            n_envs=n_envs,
-            gamma=gamma,
-            gae_lambda=gae_lambda,
-            delta=delta,
-            kl_frac=kl_frac,
-            snapshot_saver=SnapshotSaver(log_dir, interval=interval)
-        )
 
 if __name__ == "__main__":
     main()

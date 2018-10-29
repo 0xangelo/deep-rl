@@ -46,18 +46,10 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                 snapshot_saver.save_state(
                     updt+1,
                     dict(
-                        alg=vanilla,
-                        alg_state=dict(
-                            env_maker=env_maker,
-                            n_iter=n_iter,
-                            n_batch=n_batch,
-                            n_envs=n_envs,
-                            last_iter=updt,
-                            gamma=gamma,
-                            gae_lambda=gae_lambda
-                        ),
-                        models=model_states(
-                            policy, baseline, optimizer, scheduler
-                        )
+                        alg=dict(last_iter=updt),
+                        policy=policy.state_dict(),
+                        baseline=baseline.state_dict(),
+                        optimizer=optimizer.state_dict(),
+                        scheduler=scheduler.state_dict(),
                     )
                 )
