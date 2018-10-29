@@ -127,7 +127,11 @@ class FeedForwardPolicy(AbstractPolicy, FeedForwardModel):
         else:
             features = lambda x: x
         self._features = features
+
         self.apply(self.initialize)
+        nn.init.orthogonal_(self.network[-1].weight, gain=0.01)
+        nn.init.constant_(self.network[-1].bias, 0)        
+        
 
     def forward(self, x):
         return self._features(self.network(x))

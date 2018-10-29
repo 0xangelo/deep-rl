@@ -112,9 +112,9 @@ class EpisodicEnvPool(object):
         return self
 
     def reset(self, num_episodes):
-        # No point in sampling fewer episodes than total environments
-        if num_episodes < self.n_envs:
-            num_episodes = self.n_envs
+        assert num_episodes >= self.n_envs, \
+            "Can't sample fewer episodes than total environments"
+
         # try to split evenly, but this isn't always possible
         n_worker_eps = [len(d) for d in np.array_split(
             np.arange(num_episodes), self.n_parallel)]
@@ -203,6 +203,8 @@ def parallel_collect_episodes(env_pool, policy, num_episodes):
     partial_trajs = [None] * env_pool.n_envs
     num_trajs = 0
 
+    if num_episodes < env_pool.n_envs:
+        num_episodes = env_pool.n_envs
     obs = env_pool.reset(num_episodes)
     progbar = tqdm(total=num_episodes, unit="epsd", leave=False,
                    desc="Sampling", dynamic_ncols=True)
@@ -254,7 +256,6 @@ def sampling_env_worker(env_maker, conn, n_worker_envs):
         try:
             if command == 'reset':
                 obs = []
-                dones = [False] * n_worker_envs
                 for env in envs:
                     obs.append(env.reset())
                 conn.send(('success', obs))
