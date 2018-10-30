@@ -24,20 +24,22 @@ from defaults import models_config
               type=int, default=10)
 @click.option("--seed", help="for repeatability",
               type=int, default=None)
+@click.option("--model", help="which model configuration to use",
+              type=str, default='64-64Adam')
 @click.option("--delta", help="kl divergence constraint per step",
               type=float, default=1e-3)
 @click.option("--kl_frac", help="fraction of samples for kl computation",
               type=float, default=0.4)
 def main(env, log_dir, episodic, n_iter, n_batch, n_envs, gamma, gae_lambda,
-         interval, seed, delta, kl_frac):
+         interval, seed, model, delta, kl_frac):
     """
     Runs the algorithms on given environment with specified parameters.
     """
     seed = set_global_seeds(seed)
-    proto_dir = log_dir + env + '/{alg}/{seed}/'
+    proto_dir = os.path.join(log_dir, env, model, '{alg}', '{seed}', '')
 
     env_maker = EnvMaker(env)
-    types, args = models_config()
+    types, args = models_config(model)
     args['alg'] = dict(
         env_maker=env_maker,
         n_iter=n_iter,
