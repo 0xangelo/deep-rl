@@ -1,4 +1,4 @@
-import click
+import os, click
 from proj.algorithms import vanilla, natural, trpo, train
 from proj.common.utils import set_global_seeds
 from proj.common.env_makers import EnvMaker
