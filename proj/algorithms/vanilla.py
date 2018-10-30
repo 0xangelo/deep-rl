@@ -38,7 +38,7 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             logger.logkv("Objective", J0.item())
             log_reward_statistics(env)
             log_baseline_statistics(trajs)
-            log_action_distribution_statistics(all_dists)
+            log_action_distribution_statistics(all_dists, policy, all_obs)
             logger.dumpkvs()
 
             if snapshot_saver is not None:

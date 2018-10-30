@@ -1,4 +1,4 @@
-import click
+import os, click
 from proj.algorithms import vanilla, natural, trpo, train
 from proj.common.utils import set_global_seeds
 from proj.common.env_makers import EnvMaker
@@ -25,17 +25,19 @@ from defaults import models_config
               type=int, default=10)
 @click.option("--seed", help="for repeatability",
               type=int, default=None)
+@click.option("--model", help="which model configuration to use",
+              type=str, default='64-64Adam')
 @click.option("--kl_frac", help="fraction of samples for kl computation",
               type=float, default=0.4)
 def main(env, episodic, log_dir, n_iter, n_batch, n_envs, gamma, gae_lambda,
-         interval, seed, kl_frac):
+         interval, seed, model, kl_frac):
     """Runs natural pg on given environment with specified parameters."""
     
     seed = set_global_seeds(seed)
-    proto_dir = log_dir + env + '/{alg}/{seed}/'
+    proto_dir = os.path.join(log_dir, env, model, '{alg}', '{seed}', '')
 
     env_maker = EnvMaker(env)
-    types, args = models_config()
+    types, args = models_config(model)
     types['alg'] = natural
     args['alg'] = dict(
         env_maker=env_maker,

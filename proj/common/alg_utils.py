@@ -1,6 +1,7 @@
 import gym, torch, numpy as np, multiprocessing as mp
+from torch.distributions.kl import kl_divergence as kl
 from . import logger
-from .utils import explained_variance_1d, flat_grad
+from .utils import explained_variance_1d
 from .tqdm_util import trange
 from .env_pool import EnvPool, parallel_collect_experience
 from .distributions import DiagNormal, Categorical
@@ -133,7 +134,9 @@ def log_baseline_statistics(trajs):
     logger.logkv('ExplainedVariance', explained_variance_1d(baselines, returns))
 
 
-def log_action_distribution_statistics(dists):
+@torch.no_grad()
+def log_action_distribution_statistics(dists, policy, obs):
+    logger.logkv('MeanKL', kl(dists, policy.dists(obs)).mean().item())
     logger.logkv('Entropy', dists.entropy().mean().item())
     logger.logkv('Perplexity', dists.perplexity().mean().item())
     if isinstance(dists, DiagNormal):

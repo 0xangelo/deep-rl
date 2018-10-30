@@ -1,4 +1,3 @@
-from torch.distributions.kl import kl_divergence as kl
 from torch.nn.utils import parameters_to_vector as theta
 from ..common.utils import conjugate_gradient, fisher_vector_product, flat_grad
 from ..common.alg_utils import *
@@ -55,12 +54,9 @@ def natural(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             baseline.update(trajs)
 
             logger.info("Logging information")
-            with torch.no_grad():
-                avg_kl = kl(subsamp_dists, policy.dists(subsamp_obs)).mean()
-                logger.logkv("MeanKL", avg_kl.item())
             log_reward_statistics(env)
             log_baseline_statistics(trajs)
-            log_action_distribution_statistics(all_dists)
+            log_action_distribution_statistics(all_dists, policy, all_obs)
             logger.dumpkvs()
 
             if snapshot_saver is not None:
