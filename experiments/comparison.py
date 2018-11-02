@@ -16,6 +16,8 @@ from defaults import models_config
               type=int, default=None)
 @click.option("--model", help="which model configuration to use",
               type=str, default='64-64')
+@click.option("--optim", help="which optimizer-scheduler combination to use",
+              type=str, default='Adam')
 @click.option("--n_iter", help="number of iterations to run",
               type=int, default=100)
 @click.option("--n_batch", help="number of samples per iterations",
