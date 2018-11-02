@@ -6,7 +6,7 @@ def n_features(space):
     if isinstance(space, Box):
         return np.prod(space.shape)
     elif isinstance(space, Discrete):
-        return space.n
+        return space.n # if space.n > 2 else 1
     else:
         raise ValueError("{} is not a valid space type".format(str(space)))
 

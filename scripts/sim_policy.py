@@ -23,7 +23,7 @@ def main(path, index, runs, render):
         if state is None:
             time.sleep(1)
 
-    types, args = config['types'], config['args']
+    types, args = config
     args.update(state['alg'])
     pprint.pprint(config)
     env = args['alg']['env_maker'].make(pytorch=True)

@@ -1,22 +1,19 @@
 import os
 from ..common import logger
 from ..common.tqdm_util import tqdm_out
+from ..common.env_makers import EnvMaker
 from ..common.saver import SnapshotSaver
 from ..common import env_pool
 
-def train(config, proto_dir, interval=1):
-    types, args = config['types'], config['args']
-    alg, kwargs = types['alg'], args['alg']
-    
-    env_pool.episodic = True if config['episodic'] else False
-    seed = config['seed']
-    log_dir = proto_dir.format(alg=alg.__name__, seed=seed)
-    variant = dict(exp_name=alg.__name__, seed=seed)
+def train(params, types, args, log_dir='/tmp/experiment/', interval=1):
     os.system("rm -rf {}".format(log_dir))
-    saver = SnapshotSaver(log_dir, config, interval=interval)
+    env_pool.episodic = True if params['episodic'] else False
+    saver = SnapshotSaver(log_dir, (types, args), interval=interval)
 
-    with tqdm_out(), logger.session(log_dir, variant=variant):
-        env = kwargs['env_maker'].make()
+    alg, kwargs = types['alg'], args['alg']
+    kwargs['env_maker'] = env_maker = EnvMaker(params['env'])
+    with tqdm_out(), logger.session(log_dir, variant=params):
+        env = env_maker.make()
         policy = types['policy'](env, **args['policy'])
         baseline = types['baseline'](env, **args['baseline'])
         if 'optimizer' in types:

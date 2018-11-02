@@ -2,121 +2,99 @@ import torch
 from proj.common.utils import HSeries
 import proj.common.models as models
 
-configs = {
-    'simple': (
+models = {
+    'GAEcartpole': (
         dict(
             policy=models.MlpPolicy,
             baseline=models.MlpBaseline,
-            optimizer=torch.optim.SGD,
-            scheduler=torch.optim.lr_scheduler.LambdaLR,
         ),
         dict(
             policy=dict(hidden_sizes=[]),
-            baseline=dict(hidden_sizes=[10]),
-            optimizer=dict(lr=1.0),
-            scheduler=dict(lr_lambda=HSeries(1)),
+            baseline=dict(hidden_sizes=[20]),
         )
     ),
-    '10SGD': (
+    'GAErobot': (
         dict(
             policy=models.MlpPolicy,
             baseline=models.MlpBaseline,
-            optimizer=torch.optim.SGD,
-            scheduler=torch.optim.lr_scheduler.LambdaLR,
         ),
         dict(
-            policy=dict(hidden_sizes=[10]),
-            baseline=dict(hidden_sizes=[10]),
-            optimizer=dict(lr=1.0),
-            scheduler=dict(lr_lambda=HSeries(6)),
+            policy=dict(hidden_sizes=[100,50,25]),
+            baseline=dict(hidden_sizes=[100,50,25]),
         )
     ),
-    '10Adam': (
+    '10': (
         dict(
             policy=models.MlpPolicy,
             baseline=models.MlpBaseline,
-            optimizer=torch.optim.Adam,
-            scheduler=torch.optim.lr_scheduler.ExponentialLR,
         ),
         dict(
-            policy=dict(hidden_sizes=[10]),
-            baseline=dict(hidden_sizes=[10]),
-            optimizer=dict(lr=1e-2),
-            scheduler=dict(gamma=1.0),
+            policy=dict(hidden_sizes=[10], activation=torch.nn.ELU),
+            baseline=dict(hidden_sizes=[10], activation=torch.nn.ELU),
         )
     ),
-    '32-32SGD': (
+    '32-32': (
         dict(
             policy=models.MlpPolicy,
             baseline=models.MlpBaseline,
-            optimizer=torch.optim.SGD,
-            scheduler=torch.optim.lr_scheduler.LambdaLR,
         ),
         dict(
             policy=dict(hidden_sizes=[32,32], activation=torch.nn.ELU),
             baseline=dict(hidden_sizes=[32,32], activation=torch.nn.ELU),
-            optimizer=dict(lr=1.0),
-            scheduler=dict(lr_lambda=HSeries(6)),
         )
     ),
-    '32-32Adam': (
+    '32-32-32': (
         dict(
             policy=models.MlpPolicy,
             baseline=models.MlpBaseline,
-            optimizer=torch.optim.Adam,
-            scheduler=torch.optim.lr_scheduler.ExponentialLR,
-        ),
-        dict(
-            policy=dict(hidden_sizes=[32,32], activation=torch.nn.ELU),
-            baseline=dict(hidden_sizes=[32,32], activation=torch.nn.ELU),
-            optimizer=dict(lr=1e-2),
-            scheduler=dict(gamma=1.0),
-        )
-    ),
-    '32-32-32SGD': (
-        dict(
-            policy=models.MlpPolicy,
-            baseline=models.MlpBaseline,
-            optimizer=torch.optim.SGD,
-            scheduler=torch.optim.lr_scheduler.LambdaLR,
         ),
         dict(
             policy=dict(hidden_sizes=[32,32,32], activation=torch.nn.ELU),
             baseline=dict(hidden_sizes=[32,32,32], activation=torch.nn.ELU),
-            optimizer=dict(lr=1.0),
-            scheduler=dict(lr_lambda=HSeries(6)),
         )
     ),
-    '64-64SGD': (
+    '64-64': (
         dict(
             policy=models.MlpPolicy,
             baseline=models.MlpBaseline,
-            optimizer=torch.optim.SGD,
-            scheduler=torch.optim.lr_scheduler.LambdaLR,
         ),
         dict(
             policy=dict(hidden_sizes=[64,64], activation=torch.nn.ELU),
             baseline=dict(hidden_sizes=[64,64], activation=torch.nn.ELU),
-            optimizer=dict(lr=1.0),
-            scheduler=dict(lr_lambda=HSeries(6)),
         )
     ),
-    '64-64Adam': (
+}
+
+optims = {
+    'Adam': (
         dict(
-            policy=models.MlpPolicy,
-            baseline=models.MlpBaseline,
             optimizer=torch.optim.Adam,
             scheduler=torch.optim.lr_scheduler.ExponentialLR,
         ),
         dict(
-            policy=dict(hidden_sizes=[64,64], activation=torch.nn.ELU),
-            baseline=dict(hidden_sizes=[64,64], activation=torch.nn.ELU),
             optimizer=dict(lr=1e-2),
             scheduler=dict(gamma=1.0),
+        )
+    ),
+    'SGD': (
+        dict(
+            optimizer=torch.optim.SGD,
+            scheduler=torch.optim.lr_scheduler.LambdaLR,
+        ),
+        dict(
+            optimizer=dict(lr=1.0),
+            scheduler=dict(lr_lambda=HSeries(6)),
+            
         )
     )
 }
 
-def models_config(index):
-    global configs
-    return configs[index]
+def models_config(model, optim=None):
+    global models
+    global optims
+    types, args = models[model]
+    if optim is not None:
+        x, y = optims[optim]
+        types.update(x)
+        args.update(y)
+    return types, args

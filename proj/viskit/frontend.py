@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the 
 Berkeley Deep RL Bootcamp, August 2017. Bootcamp website with slides and lecture
@@ -36,7 +34,6 @@ import json
 import numpy as np
 import plotly.offline as po
 import plotly.graph_objs as go
-
 
 class AttrDict(dict):
     def __init__(self, *args, **kwargs):
@@ -86,11 +83,14 @@ def send_css(path):
     return flask.send_from_directory('css', path)
 
 
-def make_plot(plot_list, title=None):
+def make_plot(plot_list, title=None, xtitle=None, ytitle=None):
     data = []
+    xmin, xmax = None, None
     for idx, plt in enumerate(plot_list):
         color = core.color_defaults[idx % len(core.color_defaults)]
         x = list(plt.xs)
+        xmin = min(x) if xmin is None else min(xmin, min(x))
+        xmax = max(x) if xmax is None else max(xmax, max(x))
 
         if plt.display_mode in ["mean_std", "mean_se"]:
             y = list(plt.means)
@@ -107,7 +107,7 @@ def make_plot(plot_list, title=None):
                 y=y_upper + y_lower[::-1],
                 fill='tozerox',
                 fillcolor=core.hex_to_rgb(color, 0.2),
-                line=go.scatter.Line(color='white'), # previously 'transparent'
+                line=go.scatter.Line(color='rgba(0,0,0,0)'), 
                 showlegend=False,
                 legendgroup=plt.legend,
                 hoverinfo='none'
@@ -136,8 +136,20 @@ def make_plot(plot_list, title=None):
         legend=dict(
             x=1,
             y=1,
+            borderwidth=1,
         ),
         title=title,
+        xaxis=go.layout.XAxis(
+            range=[xmin,xmax],
+            showline=True,
+            mirror='ticks',
+            title=xtitle,
+        ),
+        yaxis=go.layout.YAxis(
+            showline=True,
+            mirror='ticks',
+            title=ytitle,
+        )
     )
     fig = go.Figure(data=data, layout=layout)
     fig_div = po.plot(fig, output_type='div', include_plotlyjs=False)
@@ -169,9 +181,6 @@ def get_plot_instruction(
         group_key=None,
         filters=None,
 ):
-    # print(x_plot_key, plot_key, split_key, group_key, filters)
-    # if x_plot_key != "(default)":
-    #     group_key = None
     selector = core.Selector(exps_data)
     if filters is None:
         filters = dict()
@@ -184,9 +193,9 @@ def get_plot_instruction(
         split_legends = list(map(str, vs))
     else:
         split_selectors = [selector]
-        split_legends = ["Plot"]
+        split_legends = [selector.extract()[0].params["env"]]
     plots = []
-    counter = 1
+    counter = 0
     for split_selector, split_legend in zip(split_selectors, split_legends):
         if group_key and group_key is not "exp_name":
             vs = [vs for k, vs in distinct_params if k == group_key][0]
@@ -194,7 +203,8 @@ def get_plot_instruction(
             group_legends = [str(x) for x in vs]
         else:
             group_key = "exp_name"
-            vs = sorted([x.params["exp_name"]
+            # Separate data in groups according to experiment name
+            vs = set([x.params["exp_name"]
                          for x in split_selector.extract()])
             group_selectors = [split_selector.where(group_key, v) for v in vs]
             group_legends = [summary_name(
@@ -202,37 +212,44 @@ def get_plot_instruction(
 
         to_plot = []
         for group_selector, group_legend in zip(group_selectors, group_legends):
-            filtered_data = group_selector.extract()
+            # all experiments with the same name
+            filtered_data = group_selector.extract() 
 
             if len(filtered_data) > 0:
 
+                # get all data from these experiments from the requested key
                 progresses = [
                     exp.progress.get(plot_key, np.array([np.nan]))
                     for exp in filtered_data
                 ]
+                # length of each key value (different experiments might run for
+                # different times)
                 sizes = list(map(len, progresses))
                 # more intelligent:
                 max_size = max(sizes)
+                # append nan's to experiment data which have less data points
                 progresses = [
                     np.concatenate([ps, np.ones(max_size - len(ps)) * np.nan])
                     for ps in progresses
                 ]
 
                 if x_plot_key == "(default)":
+                    # just plot data against the range from zero to max_size
                     xs = np.arange(max_size)
                 else:
                     # first decide what the xs should be
                     # ideally, it should be the union of
-
                     all_xs = np.unique(np.sort(np.concatenate(
                         [d.progress.get(x_plot_key, [])
                          for d in filtered_data])))
-                    interp_progresses = []
 
+                    interpolated_progresses = []
                     for d in filtered_data:
                         if x_plot_key in d.progress:
+                            # might break if one of the experiments doesn't
+                            # log the quantity corresponding to plot_key
                             assert plot_key in d.progress
-                            interp_progresses.append(
+                            interpolated_progresses.append(
                                 np.interp(
                                     all_xs,
                                     d.progress[x_plot_key],
@@ -243,7 +260,7 @@ def get_plot_instruction(
                         else:
                             continue
 
-                    progresses = interp_progresses
+                    progresses = interpolated_progresses
 
                     xs = all_xs
 
@@ -279,10 +296,11 @@ def get_plot_instruction(
                     raise NotImplementedError
 
         if len(to_plot) > 0:
-            fig_title = "%s: %s" % (split_key, split_legend)
             plots.append(make_plot(
                 to_plot,
-                title=fig_title,
+                title=split_legend,
+                xtitle=x_plot_key,
+                ytitle=plot_key,
             ))
 
         counter += 1

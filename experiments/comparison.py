@@ -10,6 +10,12 @@ from defaults import models_config
               type=str, default='data/')
 @click.option("--episodic", help="enforce all episodes end",
               is_flag=True)
+@click.option("--interval", help="interval between each snapshot",
+              type=int, default=10)
+@click.option("--seed", help="for repeatability",
+              type=int, default=None)
+@click.option("--model", help="which model configuration to use",
+              type=str, default='64-64')
 @click.option("--n_iter", help="number of iterations to run",
               type=int, default=100)
 @click.option("--n_batch", help="number of samples per iterations",
@@ -20,18 +26,12 @@ from defaults import models_config
               type=float, default=0.99)
 @click.option("--gae_lambda", help="generalized advantage estimation factor",
               type=float, default=0.97)
-@click.option("--interval", help="interval between each snapshot",
-              type=int, default=10)
-@click.option("--seed", help="for repeatability",
-              type=int, default=None)
-@click.option("--model", help="which model configuration to use",
-              type=str, default='64-64Adam')
-@click.option("--delta", help="kl divergence constraint per step",
-              type=float, default=1e-3)
 @click.option("--kl_frac", help="fraction of samples for kl computation",
               type=float, default=0.4)
-def main(env, log_dir, episodic, n_iter, n_batch, n_envs, gamma, gae_lambda,
-         interval, seed, model, delta, kl_frac):
+@click.option("--delta", help="kl divergence constraint per step",
+              type=float, default=1e-3)
+def main(env, episodic, log_dir, interval, seed, model, optim, kl_frac, delta,
+         **algargs):
     """
     Runs the algorithms on given environment with specified parameters.
     """
@@ -39,18 +39,14 @@ def main(env, log_dir, episodic, n_iter, n_batch, n_envs, gamma, gae_lambda,
     proto_dir = os.path.join(log_dir, env, model, '{alg}', '{seed}', '')
 
     env_maker = EnvMaker(env)
-    types, args = models_config(model)
-    args['alg'] = dict(
-        env_maker=env_maker,
-        n_iter=n_iter,
-        n_batch=n_batch,
-        n_envs=n_envs,
-        gamma=gamma,
-        gae_lambda=gae_lambda
-    )
+    types, args = models_config(model, optim)
+    algargs['env_maker'] = env_maker
+    args['alg'] = algargs
     config = dict(
         seed=seed,
         episodic=episodic,
+        model=model,
+        optim=optim,
         types=types,
         args=args
     )
