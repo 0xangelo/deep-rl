@@ -23,14 +23,14 @@ models = {
             baseline=dict(hidden_sizes=[100,50,25]),
         )
     ),
-    '10': (
+    '32': (
         dict(
             policy=models.MlpPolicy,
             baseline=models.MlpBaseline,
         ),
         dict(
-            policy=dict(hidden_sizes=[10], activation=torch.nn.ELU),
-            baseline=dict(hidden_sizes=[10], activation=torch.nn.ELU),
+            policy=dict(hidden_sizes=[32], activation=torch.nn.ELU),
+            baseline=dict(hidden_sizes=[32], activation=torch.nn.ELU),
         )
     ),
     '32-32': (
