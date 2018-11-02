@@ -165,11 +165,9 @@ optims = {
 }
 
 def models_config(model, optim=None):
-    global models
-    global optims
-    types, args = models[model]
+    types, args = (m.copy() for m in models[model])
     if optim is not None:
-        x, y = optims[optim]
+        x, y = (o.copy() for o in optims[optim])
         types.update(x)
         args.update(y)
     return types, args

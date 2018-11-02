@@ -45,7 +45,7 @@ def fisher_vector_product(v, obs, policy, damping=1e-3):
     dists = policy.dists(obs)
     avg_kl = kl(policy.pdtype(dists.flatparam().detach()), dists).mean()
     grad = flat_grad(avg_kl, policy.parameters(), create_graph=True)
-    fvp = flat_grad(grad.matmul(v), policy.parameters()).detach()
+    fvp = flat_grad(grad.dot(v), policy.parameters()).detach()
     return fvp + v * damping
 
 

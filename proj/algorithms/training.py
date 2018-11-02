@@ -8,10 +8,10 @@ from ..common import env_pool
 def train(params, types, args, log_dir='/tmp/experiment/', interval=1):
     os.system("rm -rf {}".format(log_dir))
     env_pool.episodic = True if params['episodic'] else False
-    saver = SnapshotSaver(log_dir, (types, args), interval=interval)
 
     alg, kwargs = types['alg'], args['alg']
     kwargs['env_maker'] = env_maker = EnvMaker(params['env'])
+    saver = SnapshotSaver(log_dir, (types, args), interval=interval)
     with tqdm_out(), logger.session(log_dir, variant=params):
         env = env_maker.make()
         policy = types['policy'](env, **args['policy'])

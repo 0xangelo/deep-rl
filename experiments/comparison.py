@@ -1,7 +1,6 @@
 import os, click
 from proj.algorithms import vanilla, natural, trpo, train
 from proj.common.utils import set_global_seeds
-from proj.common.env_makers import EnvMaker
 from defaults import models_config
 
 @click.command()
@@ -38,36 +37,57 @@ def main(env, episodic, log_dir, interval, seed, model, optim, kl_frac, delta,
     Runs the algorithms on given environment with specified parameters.
     """
     seed = set_global_seeds(seed)
-    proto_dir = os.path.join(log_dir, env, model, '{alg}', '{seed}', '')
+    proto_dir = os.path.join(log_dir, env, '{mod}{opt}', '{alg}', str(seed), '')
 
-    env_maker = EnvMaker(env)
-    types, args = models_config(model, optim)
-    algargs['env_maker'] = env_maker
-    args['alg'] = algargs
-    config = dict(
-        seed=seed,
+    params = dict(
+        exp_name='vanilla',
+        env=env,
         episodic=episodic,
+        seed=seed,
         model=model,
         optim=optim,
-        types=types,
-        args=args
+        **algargs
+    )
+    types, args = models_config(model, optim)
+    types['alg'], args['alg'] = vanilla, algargs
+
+    train(
+        params,
+        types,
+        args,
+        log_dir=proto_dir.format(mod=model, opt=optim, alg='vanilla'),
+        interval=interval
     )
 
-    types['alg'] = vanilla
-    train(config, proto_dir, interval=interval)
+    seed = set_global_seeds(seed)
+    algargs['kl_frac'] = params['kl_frac'] = kl_frac
+    params['exp_name'] = 'natural'
+    types, args = models_config(model, optim)
+    types['alg'], args['alg'] = natural, algargs
+
+    train(
+        params,
+        types,
+        args,
+        log_dir=proto_dir.format(mod=model, opt=optim, alg='natural'),
+        interval=interval
+    )
 
     seed = set_global_seeds(seed)
-    types['alg'] = natural
-    args['alg']['kl_frac'] = kl_frac
-    train(config, proto_dir, interval=interval)
+    algargs['delta'] = params['delta'] = delta
+    params['exp_name'] = 'trpo'
+    del params['optim']
+    types, args = models_config(model)
+    types['alg'], args['alg'] = trpo, algargs
 
-    seed = set_global_seeds(seed)
-    types['alg'] = trpo
-    args['alg']['delta'] = delta
-    del types['optimizer'], args['optimizer']
-    del types['scheduler'], args['scheduler']
-    train(config, proto_dir, interval=interval)
+    train(
+        params,
+        types,
+        args,
+        log_dir=proto_dir.format(mod=model, opt=None, alg='trpo'),
+        interval=interval
+    )
 
-
+    
 if __name__ == "__main__":
     main()

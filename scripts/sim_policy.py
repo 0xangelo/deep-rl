@@ -24,8 +24,6 @@ def main(path, index, runs, render):
             time.sleep(1)
 
     types, args = config
-    args.update(state['alg'])
-    pprint.pprint(config)
     env = args['alg']['env_maker'].make(pytorch=True)
     policy = types['policy'](env, **args['policy'])
     policy.load_state_dict(state['policy'])

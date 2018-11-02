@@ -1,7 +1,6 @@
 import gym, torch, numpy as np, multiprocessing as mp
-from torch.distributions.kl import kl_divergence as kl
 from . import logger
-from .utils import explained_variance_1d
+from .utils import explained_variance_1d, kl
 from .tqdm_util import trange
 from .env_pool import EnvPool, parallel_collect_experience
 from .distributions import DiagNormal, Categorical
