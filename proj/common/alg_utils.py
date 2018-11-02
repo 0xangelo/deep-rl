@@ -81,7 +81,7 @@ def compute_pg_vars(trajs, policy, baseline, discount, gae_lambda):
 
     # Normalizing the advantage values can make the algorithm more robust to
     # reward scaling
-    all_advs = (all_advs - all_advs.mean()) / (all_advs.std() + 1e-8)
+    # all_advs = (all_advs - all_advs.mean()) / (all_advs.std() + 1e-8)
 
     return all_obs, all_acts, all_advs, all_dists
 

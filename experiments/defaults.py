@@ -66,7 +66,17 @@ models = {
 }
 
 optims = {
-    'Adam': (
+    'Adam1': (
+        dict(
+            optimizer=torch.optim.Adam,
+            scheduler=torch.optim.lr_scheduler.ExponentialLR,
+        ),
+        dict(
+            optimizer=dict(lr=1e-1),
+            scheduler=dict(gamma=1.0),
+        )
+    ),
+    'Adam2': (
         dict(
             optimizer=torch.optim.Adam,
             scheduler=torch.optim.lr_scheduler.ExponentialLR,
@@ -76,7 +86,72 @@ optims = {
             scheduler=dict(gamma=1.0),
         )
     ),
-    'SGD': (
+    'Adam3': (
+        dict(
+            optimizer=torch.optim.Adam,
+            scheduler=torch.optim.lr_scheduler.ExponentialLR,
+        ),
+        dict(
+            optimizer=dict(lr=1e-3),
+            scheduler=dict(gamma=1.0),
+        )
+    ),
+    'SGD1': (
+        dict(
+            optimizer=torch.optim.SGD,
+            scheduler=torch.optim.lr_scheduler.LambdaLR,
+        ),
+        dict(
+            optimizer=dict(lr=1.0),
+            scheduler=dict(lr_lambda=HSeries(1)),
+            
+        )
+    ),
+    'SGD2': (
+        dict(
+            optimizer=torch.optim.SGD,
+            scheduler=torch.optim.lr_scheduler.LambdaLR,
+        ),
+        dict(
+            optimizer=dict(lr=1.0),
+            scheduler=dict(lr_lambda=HSeries(2)),
+            
+        )
+    ),
+    'SGD3': (
+        dict(
+            optimizer=torch.optim.SGD,
+            scheduler=torch.optim.lr_scheduler.LambdaLR,
+        ),
+        dict(
+            optimizer=dict(lr=1.0),
+            scheduler=dict(lr_lambda=HSeries(3)),
+            
+        )
+    ),
+    'SGD4': (
+        dict(
+            optimizer=torch.optim.SGD,
+            scheduler=torch.optim.lr_scheduler.LambdaLR,
+        ),
+        dict(
+            optimizer=dict(lr=1.0),
+            scheduler=dict(lr_lambda=HSeries(4)),
+            
+        )
+    ),
+    'SGD5': (
+        dict(
+            optimizer=torch.optim.SGD,
+            scheduler=torch.optim.lr_scheduler.LambdaLR,
+        ),
+        dict(
+            optimizer=dict(lr=1.0),
+            scheduler=dict(lr_lambda=HSeries(5)),
+            
+        )
+    ),
+    'SGD6': (
         dict(
             optimizer=torch.optim.SGD,
             scheduler=torch.optim.lr_scheduler.LambdaLR,
@@ -86,7 +161,7 @@ optims = {
             scheduler=dict(lr_lambda=HSeries(6)),
             
         )
-    )
+    ),
 }
 
 def models_config(model, optim=None):

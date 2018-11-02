@@ -139,6 +139,12 @@ def make_plot(plot_list, title=None, xtitle=None, ytitle=None):
             borderwidth=1,
         ),
         title=title,
+        margin=go.layout.Margin(
+            t=35,
+            b=35,
+            l=45,
+            r=30,
+        ),
         xaxis=go.layout.XAxis(
             range=[xmin,xmax],
             showline=True,
