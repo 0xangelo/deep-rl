@@ -120,5 +120,9 @@ pgdev/
 data/
 trash*
 
-# temporary
+# temporary or local
 tests/
+local/
+
+# vectorized images
+*.pdf

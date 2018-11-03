@@ -8,9 +8,8 @@ from proj.common.saver import SnapshotSaver
               type=int, default=None)
 @click.option("--runs", help="Number of episodes to simulate",
               type=int, default=2)
-@click.option("--render", help="Whether or not to render the simulation " +
-              "on screen",
-              is_flag=True)
+@click.option("--render", help="""Whether or not to render the 
+              simulation on screen""", is_flag=True)
 def main(path, index, runs, render):
     """
     Loads a snapshot and simulates the corresponding policy and environment.
@@ -24,6 +23,8 @@ def main(path, index, runs, render):
             time.sleep(1)
 
     types, args = config
+    args.update(state['alg'])
+    pprint.pprint(config)
     env = args['alg']['env_maker'].make(pytorch=True)
     policy = types['policy'](env, **args['policy'])
     policy.load_state_dict(state['policy'])

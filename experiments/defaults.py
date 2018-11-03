@@ -2,7 +2,7 @@ import torch
 from proj.common.utils import HSeries
 import proj.common.models as models
 
-models = {
+GAEmodels = {
     'GAEcartpole': (
         dict(
             policy=models.MlpPolicy,
@@ -23,151 +23,66 @@ models = {
             baseline=dict(hidden_sizes=[100,50,25]),
         )
     ),
-    '32': (
-        dict(
-            policy=models.MlpPolicy,
-            baseline=models.MlpBaseline,
-        ),
-        dict(
-            policy=dict(hidden_sizes=[32], activation=torch.nn.ELU),
-            baseline=dict(hidden_sizes=[32], activation=torch.nn.ELU),
-        )
-    ),
-    '32-32': (
-        dict(
-            policy=models.MlpPolicy,
-            baseline=models.MlpBaseline,
-        ),
-        dict(
-            policy=dict(hidden_sizes=[32,32], activation=torch.nn.ELU),
-            baseline=dict(hidden_sizes=[32,32], activation=torch.nn.ELU),
-        )
-    ),
-    '32-32-32': (
-        dict(
-            policy=models.MlpPolicy,
-            baseline=models.MlpBaseline,
-        ),
-        dict(
-            policy=dict(hidden_sizes=[32,32,32], activation=torch.nn.ELU),
-            baseline=dict(hidden_sizes=[32,32,32], activation=torch.nn.ELU),
-        )
-    ),
-    '64-64': (
-        dict(
-            policy=models.MlpPolicy,
-            baseline=models.MlpBaseline,
-        ),
-        dict(
-            policy=dict(hidden_sizes=[64,64], activation=torch.nn.ELU),
-            baseline=dict(hidden_sizes=[64,64], activation=torch.nn.ELU),
-        )
-    ),
 }
 
-optims = {
-    'Adam1': (
+
+def MlpModels(hidden_sizes):
+    return (
+        dict(
+            policy=models.MlpPolicy,
+            baseline=models.MlpBaseline,
+        ),
+        dict(
+            policy=dict(hidden_sizes=hidden_sizes, activation=torch.nn.ELU),
+            baseline=dict(hidden_sizes=hidden_sizes, activation=torch.nn.ELU),
+        )
+    )
+
+
+def SGDconf(decay):
+    return (
+        dict(
+            optimizer=torch.optim.SGD,
+            scheduler=torch.optim.lr_scheduler.LambdaLR,
+        ),
+        dict(
+            optimizer=dict(lr=1.0),
+            scheduler=dict(lr_lambda=HSeries(decay)),
+            
+        )
+    )
+
+
+def Adamconf(lr):
+    return (
         dict(
             optimizer=torch.optim.Adam,
             scheduler=torch.optim.lr_scheduler.ExponentialLR,
         ),
         dict(
-            optimizer=dict(lr=1e-1),
+            optimizer=dict(lr=lr),
             scheduler=dict(gamma=1.0),
         )
-    ),
-    'Adam2': (
-        dict(
-            optimizer=torch.optim.Adam,
-            scheduler=torch.optim.lr_scheduler.ExponentialLR,
-        ),
-        dict(
-            optimizer=dict(lr=1e-2),
-            scheduler=dict(gamma=1.0),
-        )
-    ),
-    'Adam3': (
-        dict(
-            optimizer=torch.optim.Adam,
-            scheduler=torch.optim.lr_scheduler.ExponentialLR,
-        ),
-        dict(
-            optimizer=dict(lr=1e-3),
-            scheduler=dict(gamma=1.0),
-        )
-    ),
-    'SGD1': (
-        dict(
-            optimizer=torch.optim.SGD,
-            scheduler=torch.optim.lr_scheduler.LambdaLR,
-        ),
-        dict(
-            optimizer=dict(lr=1.0),
-            scheduler=dict(lr_lambda=HSeries(1)),
-            
-        )
-    ),
-    'SGD2': (
-        dict(
-            optimizer=torch.optim.SGD,
-            scheduler=torch.optim.lr_scheduler.LambdaLR,
-        ),
-        dict(
-            optimizer=dict(lr=1.0),
-            scheduler=dict(lr_lambda=HSeries(2)),
-            
-        )
-    ),
-    'SGD3': (
-        dict(
-            optimizer=torch.optim.SGD,
-            scheduler=torch.optim.lr_scheduler.LambdaLR,
-        ),
-        dict(
-            optimizer=dict(lr=1.0),
-            scheduler=dict(lr_lambda=HSeries(3)),
-            
-        )
-    ),
-    'SGD4': (
-        dict(
-            optimizer=torch.optim.SGD,
-            scheduler=torch.optim.lr_scheduler.LambdaLR,
-        ),
-        dict(
-            optimizer=dict(lr=1.0),
-            scheduler=dict(lr_lambda=HSeries(4)),
-            
-        )
-    ),
-    'SGD5': (
-        dict(
-            optimizer=torch.optim.SGD,
-            scheduler=torch.optim.lr_scheduler.LambdaLR,
-        ),
-        dict(
-            optimizer=dict(lr=1.0),
-            scheduler=dict(lr_lambda=HSeries(5)),
-            
-        )
-    ),
-    'SGD6': (
-        dict(
-            optimizer=torch.optim.SGD,
-            scheduler=torch.optim.lr_scheduler.LambdaLR,
-        ),
-        dict(
-            optimizer=dict(lr=1.0),
-            scheduler=dict(lr_lambda=HSeries(6)),
-            
-        )
-    ),
-}
+    )
+
 
 def models_config(model, optim=None):
-    types, args = (m.copy() for m in models[model])
+    if 'Mlp' in model:
+        # expect 'Mlp-size-size-...
+        model = model.split('-')
+        types, args = MlpModels(list(map(int, model[1:])))
+    else:
+        types, args = (m.copy() for m in GAEmodels[model])
+
     if optim is not None:
-        x, y = (o.copy() for o in optims[optim])
+        if 'SGD' in optim:
+            optim = optim.split('-')
+            x, y = SGDconf(int(optim[-1]))
+        elif 'Adam' in optim:
+            optim = optim.split('-')
+            x, y = Adamconf(float(optim[-1]))
+        else:
+            raise ValueError("Invalid optimizer argument {}".format(optim))
         types.update(x)
         args.update(y)
     return types, args
