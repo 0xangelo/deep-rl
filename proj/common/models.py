@@ -3,10 +3,6 @@ from abc import ABC, abstractmethod
 from . import distributions
 from .observations import n_features
 
-torch.set_default_tensor_type(torch.FloatTensor)
-if torch.cuda.is_available():
-    torch.set_default_tensor_type(torch.cuda.FloatTensor)
-
 
 # ==============================
 # Models

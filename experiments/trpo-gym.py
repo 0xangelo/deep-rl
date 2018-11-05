@@ -1,4 +1,4 @@
-import os, click
+import os, click, torch
 from proj.algorithms import trpo, train
 from proj.common.utils import set_global_seeds
 from defaults import models_config
@@ -9,6 +9,8 @@ from defaults import models_config
 @click.option("--log_dir", help="where to save checkpoint and progress data",
               type=str, default='data/')
 @click.option("--episodic", help="enforce all episodes end",
+              is_flag=True)
+@click.option("--cuda", help="enable GPU acceleration if available",
               is_flag=True)
 @click.option("--interval", help="interval between each snapshot",
               type=int, default=10)
@@ -30,10 +32,14 @@ from defaults import models_config
               type=float, default=0.4)
 @click.option("--delta", help="kl divergence constraint per step",
               type=float, default=1e-3)
-def main(env, episodic, log_dir, interval, seed, model, **algargs):
+def main(env, episodic, cuda, log_dir, interval, seed, model, **algargs):
     """Runs TRPO on given environment with specified parameters."""
     
     seed = set_global_seeds(seed)
+    if cuda and torch.cuda.is_available():
+        torch.set_default_tensor_type(torch.cuda.FloatTensor)
+    else:
+        torch.set_default_tensor_type(torch.FloatTensor)
     log_dir = os.path.join(log_dir, env, model + 'None', 'trpo', str(seed), '')
 
     params = dict(
