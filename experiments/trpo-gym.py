@@ -40,7 +40,7 @@ def main(env, episodic, cuda, log_dir, interval, seed, model, **algargs):
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
     else:
         torch.set_default_tensor_type(torch.FloatTensor)
-    log_dir = os.path.join(log_dir, env, model + '|None', 'trpo', str(seed), '')
+    log_dir = os.path.join(log_dir, env, model + '+None', 'trpo', str(seed), '')
 
     params = dict(
         exp_name='trpo',

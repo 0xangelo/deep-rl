@@ -43,7 +43,7 @@ def main(env, episodic, cuda, log_dir, interval, seed, model, optim, kl_frac,
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
     else:
         torch.set_default_tensor_type(torch.FloatTensor)
-    proto_dir = os.path.join(log_dir, env, '{mod}|{opt}', '{alg}', str(seed), '')
+    proto_dir = os.path.join(log_dir, env, '{mod}+{opt}', '{alg}', str(seed), '')
 
     params = dict(
         exp_name='vanilla',
