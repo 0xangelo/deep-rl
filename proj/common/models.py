@@ -30,6 +30,18 @@ class MlpModel(Model, FeedForwardModel):
     def __init__(self, env, *, hidden_sizes=[64, 64], activation=nn.Tanh,
                  **kwargs):
         super().__init__(env, **kwargs)
+        if isinstance(activation, str):
+            if activation == 'tanh':
+                activation = nn.Tanh
+            elif activation == 'relu':
+                activation = nn.ReLU
+            elif activation == 'elu':
+                activation = nn.ELU
+            else:
+                raise ValueError(
+                    "Invalid string option '{}' for activation".format(
+                        activation
+                    ))
         self.activation = activation
         self.hidden_sizes = hidden_sizes
 

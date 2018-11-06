@@ -10,7 +10,7 @@ GAEmodels = {
         ),
         dict(
             policy=dict(hidden_sizes=[]),
-            baseline=dict(hidden_sizes=[20]),
+            baseline=dict(hidden_sizes=[20], activation='tanh'),
         )
     ),
     'GAErobot': (
@@ -19,22 +19,22 @@ GAEmodels = {
             baseline=models.MlpBaseline,
         ),
         dict(
-            policy=dict(hidden_sizes=[100,50,25]),
-            baseline=dict(hidden_sizes=[100,50,25]),
+            policy=dict(hidden_sizes=[100,50,25], activation='tanh'),
+            baseline=dict(hidden_sizes=[100,50,25], activation='tanh'),
         )
     ),
 }
 
 
-def MlpModels(hidden_sizes):
+def MlpModels(hidden_sizes, activation):
     return (
         dict(
             policy=models.MlpPolicy,
             baseline=models.MlpBaseline,
         ),
         dict(
-            policy=dict(hidden_sizes=hidden_sizes, activation=torch.nn.ELU),
-            baseline=dict(hidden_sizes=hidden_sizes, activation=torch.nn.ELU),
+            policy=dict(hidden_sizes=hidden_sizes, activation=activation),
+            baseline=dict(hidden_sizes=hidden_sizes, activation=activation),
         )
     )
 
@@ -68,19 +68,20 @@ def Adamconf(lr):
 
 def models_config(model, optim=None):
     if 'Mlp' in model:
-        # expect 'Mlp-size-size-...
-        model = model.split('-')
-        types, args = MlpModels(list(map(int, model[1:])))
+        # expect 'Mlp:size-...-size:activation
+        model = model.split(':')
+        sizes = list(map(int, model[1].split('-')))
+        activation = model[2]
+        types, args = MlpModels(sizes, activation)
     else:
         types, args = (m.copy() for m in GAEmodels[model])
 
     if optim is not None:
+        optim = optim.split(':')
         if 'SGD' in optim:
-            optim = optim.split('-')
-            x, y = SGDconf(int(optim[-1]))
+            x, y = SGDconf(int(optim[1]))
         elif 'Adam' in optim:
-            optim = optim.split('-')
-            x, y = Adamconf(float(optim[-1]))
+            x, y = Adamconf(float(optim[1]))
         else:
             raise ValueError("Invalid optimizer argument {}".format(optim))
         types.update(x)

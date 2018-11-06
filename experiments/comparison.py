@@ -16,9 +16,9 @@ from defaults import models_config
 @click.option("--seed", help="for repeatability",
               type=int, default=None)
 @click.option("--model", help="which model configuration to use",
-              type=str, default='Mlp-64-64')
+              type=str, default='Mlp:64-64:elu')
 @click.option("--optim", help="which optimizer-scheduler combination to use",
-              type=str, default='Adam-1e-2')
+              type=str, default='Adam:1e-2')
 @click.option("--n_iter", help="number of iterations to run",
               type=int, default=100)
 @click.option("--n_batch", help="number of samples per iterations",
@@ -43,7 +43,7 @@ def main(env, episodic, cuda, log_dir, interval, seed, model, optim, kl_frac,
         torch.set_default_tensor_type(torch.cuda.FloatTensor)
     else:
         torch.set_default_tensor_type(torch.FloatTensor)
-    proto_dir = os.path.join(log_dir, env, '{mod}{opt}', '{alg}', str(seed), '')
+    proto_dir = os.path.join(log_dir, env, '{mod}|{opt}', '{alg}', str(seed), '')
 
     params = dict(
         exp_name='vanilla',
