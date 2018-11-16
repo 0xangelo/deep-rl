@@ -1,4 +1,4 @@
-import os, click, cuda
+import os, click, torch
 from proj.algorithms import natural, train
 from proj.common.utils import set_global_seeds
 from defaults import models_config

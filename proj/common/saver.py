@@ -21,9 +21,9 @@ class SnapshotSaver(object):
         self.latest_only = latest_only
 
         file_path = os.path.join(path, "config.pkl")
-        if os.path.exists(file_path) is False:
-            if config is None:
-                raise ValueError("Missing experiment config")
+        if os.path.exists(file_path) is False and config is None:
+            raise ValueError("Missing experiment config")
+        if config is not None:
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             with open(file_path, "wb") as f:
                 torch.save(
