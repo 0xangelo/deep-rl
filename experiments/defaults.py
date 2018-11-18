@@ -39,7 +39,7 @@ def MlpModels(hidden_sizes, activation):
     )
 
 
-def SGDconf(decay):
+def SGDconf(scale):
     return (
         dict(
             optimizer=torch.optim.SGD,
@@ -47,7 +47,7 @@ def SGDconf(decay):
         ),
         dict(
             optimizer=dict(lr=1.0),
-            scheduler=dict(lr_lambda=HSeries(decay)),
+            scheduler=dict(lr_lambda=HSeries(scale)),
             
         )
     )
@@ -79,7 +79,7 @@ def models_config(model, optim=None):
     if optim is not None:
         optim = optim.split(':')
         if 'SGD' in optim:
-            x, y = SGDconf(int(optim[1]))
+            x, y = SGDconf(float(optim[1]))
         elif 'Adam' in optim:
             x, y = Adamconf(float(optim[1]))
         else:

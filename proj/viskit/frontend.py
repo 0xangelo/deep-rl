@@ -139,10 +139,11 @@ def make_plot(plot_list, title=None, xtitle=None, ytitle=None):
             borderwidth=1,
         ),
         title=title,
+        titlefont=dict(size=20),
         margin=go.layout.Margin(
             t=35,
-            b=35,
-            l=45,
+            b=40,
+            l=50,
             r=30,
         ),
         xaxis=go.layout.XAxis(
@@ -150,11 +151,17 @@ def make_plot(plot_list, title=None, xtitle=None, ytitle=None):
             showline=True,
             mirror='ticks',
             title=xtitle,
+            gridwidth=2,
+            tickfont=dict(size=14),
+            titlefont=dict(size=16),
         ),
         yaxis=go.layout.YAxis(
             showline=True,
             mirror='ticks',
             title=ytitle,
+            gridwidth=2,
+            tickfont=dict(size=14),
+            titlefont=dict(size=16),
         )
     )
     fig = go.Figure(data=data, layout=layout)

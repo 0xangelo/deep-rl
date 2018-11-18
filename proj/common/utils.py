@@ -61,8 +61,8 @@ def explained_variance_1d(ypred, y):
 
 
 class HSeries:
-    def __init__(self, decay):
-        self.decay = decay
+    def __init__(self, scale):
+        self.scale = scale
 
     def __call__(self, epoch):
-        return 1 / (epoch // self.decay + 1)
+        return self.scale * 1 / (epoch + 1)
