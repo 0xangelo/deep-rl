@@ -17,7 +17,7 @@ def main(path, index, runs, render):
     
     state = None
     while state is None:
-        saver = SnapshotSaver(path)
+        saver = SnapshotSaver(path, latest_only=(index is None))
         config, state = saver.get_state(index)
         if state is None:
             time.sleep(1)
