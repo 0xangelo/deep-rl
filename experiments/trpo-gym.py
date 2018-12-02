@@ -31,7 +31,7 @@ from defaults import models_config
 @click.option("--kl_frac", help="fraction of samples for kl computation",
               type=float, default=0.4)
 @click.option("--delta", help="kl divergence constraint per step",
-              type=float, default=1e-3)
+              type=float, default=0.01)
 def main(env, episodic, cuda, log_dir, interval, seed, model, **algargs):
     """Runs TRPO on given environment with specified parameters."""
     

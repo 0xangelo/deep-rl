@@ -2,7 +2,7 @@ import math, functools, torch, torch.nn as nn
 from abc import ABC, abstractmethod
 from . import distributions
 from .observations import n_features
-
+from gym import spaces
 
 # ==============================
 # Models
@@ -70,7 +70,7 @@ class AbstractPolicy(ABC):
         super().__init__(env, **kwargs)
         self.ac_space = env.action_space
         self.out_features = n_features(self.ac_space)
-        self.pdtype = distributions.make_pdtype(self.ac_space)
+        self.make_pd = distributions.pd_maker(self.ac_space, self)
         
     @abstractmethod
     def actions(self, obs):
@@ -125,24 +125,15 @@ class FeedForwardPolicy(AbstractPolicy, FeedForwardModel):
         super().__init__(env, **kwargs)
         self.network = self.build_network()
         
-        if issubclass(self.pdtype, distributions.DiagNormal):
-            self.logstd = nn.Parameter(torch.zeros(1, self.out_features))
-            self.out_features *= 2
-            def features(layers_out):
-                logstd = self.logstd.expand_as(layers_out)
-                sttdev = torch.exp(logstd)
-                return torch.cat((layers_out, sttdev), dim=1)
-        else:
-            features = lambda x: x
-        self._features = features
+        if isinstance(self.ac_space, spaces.Box):
+            self.logstd = nn.Parameter(torch.zeros(self.out_features))
 
         self.apply(self.initialize)
         nn.init.orthogonal_(self.network[-1].weight, gain=0.01)
         nn.init.constant_(self.network[-1].bias, 0)        
         
-
     def forward(self, x):
-        return self._features(self.network(x))
+        return self.network(x)
 
     @torch.no_grad()
     def actions(self, obs):
@@ -152,11 +143,109 @@ class FeedForwardPolicy(AbstractPolicy, FeedForwardModel):
         return self.actions(ob.unsqueeze(0))[0]
 
     def dists(self, obs):
-        return self.pdtype(self(obs))
+        return self.make_pd(self(obs))
         
 
 class MlpPolicy(FeedForwardPolicy, MlpModel):
     pass
+
+
+# ==============================
+# Policies
+# ==============================
+
+# class AbstractPolicy(ABC):
+#     def __init__(self, env, **kwargs):
+#         super().__init__(env, **kwargs)
+#         self.ac_space = env.action_space
+#         self.out_features = n_features(self.ac_space)
+#         self.pdtype = distributions.make_pdtype(self.ac_space)
+        
+#     @abstractmethod
+#     def actions(self, obs):
+#         """
+#         Given a batch of observations, return a batch of actions, 
+#         each sampled from the corresponding action distributions.
+
+#         Args:
+#         x (Tensor): A batch of observations
+
+#         return (Tensor): A batch of actions
+#         """
+#         pass
+
+#     @abstractmethod
+#     def forward(self, x):
+#         """
+#         Given some observations, returns the parameters 
+#         for the action distributions.
+
+#         Args:
+#         x (Tensor): A batch of observations
+
+#         return (Tensor): distribution parameters
+#         """
+#         pass
+
+#     @abstractmethod
+#     def action(self, ob):
+#         """
+#         Single observation version of AbstractPolicy.actions,
+#         with batch dimension removed.
+#         """
+#         pass
+
+#     @abstractmethod
+#     def dists(self, obs):
+#         """
+#         Given a batch of observations, return a batch of corresponding 
+#         action distributions.
+
+#         Args:
+#         obs (Tensor): A batch of observations
+
+#         return (Tensor): A batch of action distributions
+#         """
+#         pass
+
+
+# class FeedForwardPolicy(AbstractPolicy, FeedForwardModel):
+#     def __init__(self, env, **kwargs):
+#         super().__init__(env, **kwargs)
+#         self.network = self.build_network()
+        
+#         if issubclass(self.pdtype, distributions.DiagNormal):
+#             self.logstd = nn.Parameter(torch.zeros(1, self.out_features))
+#             self.out_features *= 2
+#             def features(layers_out):
+#                 logstd = self.logstd.expand_as(layers_out)
+#                 sttdev = torch.exp(logstd)
+#                 return torch.cat((layers_out, sttdev), dim=1)
+#         else:
+#             features = lambda x: x
+#         self._features = features
+
+#         self.apply(self.initialize)
+#         nn.init.orthogonal_(self.network[-1].weight, gain=0.01)
+#         nn.init.constant_(self.network[-1].bias, 0)        
+        
+
+#     def forward(self, x):
+#         return self._features(self.network(x))
+
+#     @torch.no_grad()
+#     def actions(self, obs):
+#         return self.dists(obs).sample()
+
+#     def action(self, ob):
+#         return self.actions(ob.unsqueeze(0))[0]
+
+#     def dists(self, obs):
+#         return self.pdtype(self(obs))
+        
+
+# class MlpPolicy(FeedForwardPolicy, MlpModel):
+#     pass
 
 # ==============================
 # Baselines

@@ -26,16 +26,6 @@ def compute_cumulative_returns(rewards, baselines, discount):
     return returns.to(rewards)
 
 
-# def compute_advantages(rewards, baselines, discount, *args):
-#     """
-#     Given returns R_t and baselines b(s_t), compute (monte carlo) advantage
-#     estimate A_t.
-#     """
-#     returns = compute_cumulative_returns(rewards, baselines, discount)
-#     gt = discount ** torch.arange(len(returns), dtype=torch.get_default_dtype())
-#     return gt * (returns - baselines[:-1])
-
-
 def compute_advantages(rewards, baselines, discount, gae_lambda):
     """
     Given returns R_t and baselines b(s_t), compute (generalized) advantage 
@@ -80,7 +70,7 @@ def compute_pg_vars(trajs, policy, baseline, discount, gae_lambda):
 
     # Normalizing the advantage values can make the algorithm more robust to
     # reward scaling
-    # all_advs = (all_advs - all_advs.mean()) / (all_advs.std() + 1e-8)
+    all_advs = (all_advs - all_advs.mean()) / all_advs.std()
 
     return all_obs, all_acts, all_advs, all_dists
 

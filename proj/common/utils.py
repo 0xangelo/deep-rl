@@ -42,11 +42,18 @@ def flat_grad(*args, **kwargs):
 
 
 def fisher_vector_product(v, obs, policy, damping=1e-3):
-    dists = policy.dists(obs)
-    avg_kl = kl(policy.pdtype(dists.flatparam().detach()), dists).mean()
+    avg_kl = policy.dists(obs).kl_self().mean()
     grad = flat_grad(avg_kl, policy.parameters(), create_graph=True)
     fvp = flat_grad(grad.dot(v), policy.parameters()).detach()
     return fvp + v * damping
+
+
+# def fisher_vector_product(v, obs, policy, damping=1e-3):
+#     dists = policy.dists(obs)
+#     avg_kl = kl(policy.pdtype(dists.flatparam().detach()), dists).mean()
+#     grad = flat_grad(avg_kl, policy.parameters(), create_graph=True)
+#     fvp = flat_grad(grad.dot(v), policy.parameters()).detach()
+#     return fvp + v * damping
 
 
 def explained_variance_1d(ypred, y):
