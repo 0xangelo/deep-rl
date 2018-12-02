@@ -1,8 +1,8 @@
-import math, functools, torch, torch.nn as nn
+import math, torch, torch.nn as nn
 from abc import ABC, abstractmethod
 from . import distributions
 from .observations import n_features
-
+from gym import spaces
 
 # ==============================
 # Models
@@ -70,7 +70,7 @@ class AbstractPolicy(ABC):
         super().__init__(env, **kwargs)
         self.ac_space = env.action_space
         self.out_features = n_features(self.ac_space)
-        self.pdtype = distributions.make_pdtype(self.ac_space)
+        self.make_pd = distributions.pd_maker(self.ac_space, self)
         
     @abstractmethod
     def actions(self, obs):
@@ -125,24 +125,15 @@ class FeedForwardPolicy(AbstractPolicy, FeedForwardModel):
         super().__init__(env, **kwargs)
         self.network = self.build_network()
         
-        if issubclass(self.pdtype, distributions.DiagNormal):
-            self.logstd = nn.Parameter(torch.zeros(1, self.out_features))
-            self.out_features *= 2
-            def features(layers_out):
-                logstd = self.logstd.expand_as(layers_out)
-                sttdev = torch.exp(logstd)
-                return torch.cat((layers_out, sttdev), dim=1)
-        else:
-            features = lambda x: x
-        self._features = features
+        if isinstance(self.ac_space, spaces.Box):
+            self.logstd = nn.Parameter(torch.zeros(self.out_features))
 
         self.apply(self.initialize)
         nn.init.orthogonal_(self.network[-1].weight, gain=0.01)
         nn.init.constant_(self.network[-1].bias, 0)        
         
-
     def forward(self, x):
-        return self._features(self.network(x))
+        return self.network(x)
 
     @torch.no_grad()
     def actions(self, obs):
@@ -152,11 +143,12 @@ class FeedForwardPolicy(AbstractPolicy, FeedForwardModel):
         return self.actions(ob.unsqueeze(0))[0]
 
     def dists(self, obs):
-        return self.pdtype(self(obs))
+        return self.make_pd(self(obs))
         
 
 class MlpPolicy(FeedForwardPolicy, MlpModel):
     pass
+
 
 # ==============================
 # Baselines
@@ -176,13 +168,14 @@ class AbstractBaseline(ABC):
         pass
 
     @abstractmethod
-    def update(self, trajs):
+    def update(self, buffer):
         """
-        Given a list of trajectories, update the reinforcement baseline.
+        Given a buffer with observations, returns and baselines,
+        update the reinforcement baseline.
 
         Args:
-        trajs (list): A list of trajectories as returned from 
-                            parallel_collect_samples
+        buffer (dict): A buffer containing 'observations', 'returns' and 
+        'baselines' as keys.
         """
         pass
 
@@ -191,7 +184,7 @@ class ZeroBaseline(AbstractBaseline, Model):
     def forward(self, x):
         return torch.zeros(len(x))
 
-    def update(self, trajs):
+    def update(self, buffer):
         pass
 
 
@@ -211,19 +204,16 @@ class FeedForwardBaseline(AbstractBaseline, FeedForwardModel):
                                          / self.timestep_limit
         return torch.squeeze(self.network(torch.cat((x, ts[:, None]), dim=-1)))
 
-    def update(self, trajs):
-        obs = torch.cat([traj['observations'] for traj in trajs])
-        returns = torch.cat([traj['returns'] for traj in trajs])
-        baselines = torch.cat([traj['baselines'] for traj in trajs])
-
-        targets = self.mixture_fraction * baselines + \
-                  (1 - self.mixture_fraction) * returns
+    def update(self, buffer):
+        observations = buffer["observations"]
+        targets = self.mixture_fraction * buffer["baselines"] + \
+                  (1 - self.mixture_fraction) * buffer["returns"]
 
         loss_fn = nn.MSELoss()
         optimizer = torch.optim.LBFGS(self.parameters(), max_iter=10)
         def closure():
             optimizer.zero_grad()
-            loss = loss_fn(self(obs), targets)
+            loss = loss_fn(self(observations), targets)
             loss.backward()
             return loss
 

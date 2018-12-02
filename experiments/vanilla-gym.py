@@ -8,8 +8,6 @@ from defaults import models_config
 @click.argument("env")
 @click.option("--log_dir", help="where to save checkpoint and progress data",
               type=str, default='data/')
-@click.option("--episodic", help="enforce all episodes end",
-              is_flag=True)
 @click.option("--cuda", help="enable GPU acceleration if available",
               is_flag=True)
 @click.option("--interval", help="interval between each snapshot",
@@ -26,11 +24,11 @@ from defaults import models_config
               type=int, default=2000)
 @click.option("--n_envs", help="number of environments to run in parallel",
               type=int, default=8)
-@click.option("--gamma", help="discount factor for expected return criterion",
+@click.option("--gamma", help="generalized advantage estimation discount",
               type=float, default=0.99)
-@click.option("--gae_lambda", help="generalized advantage estimation factor",
+@click.option("--gaelam", help="generalized advantage estimation lambda",
               type=float, default=0.97)
-def main(env, episodic, cuda, log_dir, interval, seed, model, optim, **algargs):
+def main(env, cuda, log_dir, interval, seed, model, optim, **algargs):
     """Runs vanilla pg on given environment with specified parameters."""
     
     seed = set_global_seeds(seed)
@@ -43,7 +41,6 @@ def main(env, episodic, cuda, log_dir, interval, seed, model, optim, **algargs):
     params = dict(
         exp_name='vanilla',
         env=env,
-        episodic=episodic,
         seed=seed,
         model=model,
         optim=optim,

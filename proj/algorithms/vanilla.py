@@ -1,7 +1,7 @@
 from ..common.alg_utils import *
 
 def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
-            n_batch=2000, last_iter=-1, gamma=0.99, gae_lambda=0.97,
+            n_batch=2000, last_iter=-1, gamma=0.99, gaelam=0.97,
             optimizer=None, scheduler=None, snapshot_saver=None):
 
     if optimizer is None:
@@ -16,11 +16,11 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             logger.logkv("Iteration", updt)
             
             logger.info("Start collecting samples")
-            trajs = parallel_collect_experience(env_pool, policy, n_batch)
+            trajs = parallel_collect_samples(env_pool, policy, n_batch)
             
             logger.info("Computing policy gradient variables")
             all_obs, all_acts, all_advs, all_dists = compute_pg_vars(
-                trajs, policy, baseline, gamma, gae_lambda
+                trajs, policy, baseline, gamma, gaelam
             )
 
             logger.info("Applying policy gradient")

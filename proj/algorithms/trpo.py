@@ -30,34 +30,31 @@ def line_search(f, x0, dx, expected_improvement, y0=None, accept_ratio=0.1,
 
 
 def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(), 
-         n_batch=2000, last_iter=-1, gamma=0.99, gae_lambda=0.97,
+         n_batch=2000, last_iter=-1, gamma=0.99, gaelam=0.97,
          kl_frac=0.5, delta=0.01, snapshot_saver=None):
 
     # Algorithm main loop
-    with EnvPool(env, env_maker, n_envs=n_envs) as env_pool:
+    with EnvPool(env_maker, n_envs=n_envs) as env_pool:
         for updt in trange(last_iter + 1, n_iter, desc="Training", unit="updt",
                            dynamic_ncols=True):
             logger.info("Starting iteration {}".format(updt))
             logger.logkv("Iteration", updt)
             
             logger.info("Start collecting samples")
-            trajs = parallel_collect_experience(env_pool, policy, n_batch)
+            buffer = parallel_collect_samples(env_pool, policy, n_batch)
             
             logger.info("Computing policy gradient variables")
             all_obs, all_acts, all_advs, all_dists = compute_pg_vars(
-                trajs, policy, baseline, gamma, gae_lambda
+                buffer, policy, baseline, gamma, gaelam
             )
 
-            # subsample for kl divergence computation
+            # subsample for fisher vector product computation
             if kl_frac < 1.:
                 n_samples = int(kl_frac*len(all_obs))
                 indexes = torch.randperm(len(all_obs))[:n_samples]
                 subsamp_obs = all_obs.index_select(0, indexes)
-                subsamp_dists = policy.pdtype(
-                    all_dists.flatparam().index_select(0, indexes))
             else:
                 subsamp_obs = all_obs
-                subsamp_dists = all_dists
 
             logger.info("Computing policy gradient")
             new_dists = policy.dists(all_obs)
@@ -97,12 +94,12 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             vector_to_parameters(new_params, policy.parameters())
 
             logger.info("Updating baseline")
-            baseline.update(trajs)
+            baseline.update(buffer)
 
             logger.info("Logging information")
             log_reward_statistics(env)
-            log_baseline_statistics(trajs)
-            log_action_distribution_statistics(all_dists, policy, all_obs)
+            log_baseline_statistics(buffer)
+            log_action_distribution_statistics(buffer, policy)
             logger.dumpkvs()
 
             if snapshot_saver is not None:

@@ -1,6 +1,6 @@
 import gym, torch, random, numpy as np
+import scipy.signal
 from torch.autograd import grad
-from torch.distributions.kl import kl_divergence as kl
 
 
 def set_global_seeds(seed):
@@ -10,6 +10,24 @@ def set_global_seeds(seed):
     random.seed(seed)
     torch.manual_seed(seed)
     return seed
+
+
+def discount_cumsum(x, discount):
+    """
+    magic from rllab for computing discounted cumulative sums of vectors.
+
+    input: 
+        vector x, 
+        [x0, 
+         x1, 
+         x2]
+
+    output:
+        [x0 + discount * x1 + discount^2 * x2,  
+         x1 + discount * x2,
+         x2]
+    """
+    return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
 
 def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
@@ -42,8 +60,7 @@ def flat_grad(*args, **kwargs):
 
 
 def fisher_vector_product(v, obs, policy, damping=1e-3):
-    dists = policy.dists(obs)
-    avg_kl = kl(policy.pdtype(dists.flatparam().detach()), dists).mean()
+    avg_kl = policy.dists(obs).kl_self().mean()
     grad = flat_grad(avg_kl, policy.parameters(), create_graph=True)
     fvp = flat_grad(grad.dot(v), policy.parameters()).detach()
     return fvp + v * damping

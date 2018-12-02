@@ -7,7 +7,6 @@ from ..common import env_pool
 
 def train(params, types, args, log_dir='/tmp/experiment/', interval=1):
     os.system("rm -rf {}".format(log_dir))
-    env_pool.episodic = True if params['episodic'] else False
 
     alg, kwargs = types['alg'], args['alg']
     kwargs['env_maker'] = env_maker = EnvMaker(params['env'])
