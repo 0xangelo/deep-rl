@@ -1,12 +1,44 @@
-import os, cloudpickle.cloudpickle as cpkl, torch
+import os, json, cloudpickle.cloudpickle as cpkl, torch
 
+
+def convert_json(obj):
+    """ Convert obj to a version which can be serialized with JSON. """
+    if is_json_serializable(obj):
+        return obj
+    else:
+        if isinstance(obj, dict):
+            return {convert_json(k): convert_json(v) 
+                    for k,v in obj.items()}
+
+        elif isinstance(obj, tuple):
+            return (convert_json(x) for x in obj)
+
+        elif isinstance(obj, list):
+            return [convert_json(x) for x in obj]
+
+        elif hasattr(obj,'__name__') and not('lambda' in obj.__name__):
+            return convert_json(obj.__name__)
+
+        elif hasattr(obj,'__dict__') and obj.__dict__:
+            obj_dict = {convert_json(k): convert_json(v) 
+                        for k,v in obj.__dict__.items()}
+            return {str(obj): obj_dict}
+
+        return str(obj)
+
+def is_json_serializable(v):
+    try:
+        json.dumps(v)
+        return True
+    except:
+        return False
 
 # ==============================
 # Saving snapshots
 # ==============================
 
 class SnapshotSaver(object):
-    def __init__(self, path, config=None, interval=1, latest_only=None):
+    def __init__(self, path, interval=10, latest_only=None):
         self.path = path
         self.interval = interval
 
@@ -20,18 +52,17 @@ class SnapshotSaver(object):
                     latest_only = False
         self.latest_only = latest_only
 
-        file_path = os.path.join(path, "config.pkl")
-        if os.path.exists(file_path) is False and config is None:
-            raise ValueError("Missing experiment config")
-        if config is not None:
-            os.makedirs(os.path.dirname(file_path), exist_ok=True)
-            with open(file_path, "wb") as f:
-                torch.save(
-                    config,
-                    f,
-                    pickle_module=cpkl,
-                    pickle_protocol=-1
-                )
+    def save_config(self, config):
+        os.makedirs(self.path, exist_ok=True)
+        with open(os.path.join(self.path, "config.pkl"), "wb") as f:
+            torch.save(config, f, pickle_module=cpkl, pickle_protocol=-1)
+
+        with open(os.path.join(self.path, "variant.json"), "at") as f:
+            json.dump(config, f)
+
+    def get_config(self):
+        with open(os.path.join(self.path, "config.pkl"), "rb") as f:
+            return torch.load(f, map_location=device)
 
     @property
     def snapshots_folder(self):
@@ -48,30 +79,22 @@ class SnapshotSaver(object):
             file_path = self.get_snapshot_path(index)
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             with open(file_path, "wb") as f:
-                torch.save(
-                    state,
-                    f,
-                    pickle_module=cpkl,
-                    pickle_protocol=-1
-                )
+                torch.save(state, f, pickle_module=cpkl, pickle_protocol=-1)
 
     def get_state(self, index=None):
         device = torch.device('cpu')
         if torch.cuda.is_available():
             device = torch.device('cuda')
-        with open(os.path.join(self.path, "config.pkl"), "rb") as f:
-            config = torch.load(f, map_location=device)
-
         if self.latest_only:
             try:
                 with open(self.get_snapshot_path(0), "rb") as f:
-                    return config, torch.load(f, map_location=device)
+                    return torch.load(f, map_location=device)
             except EOFError:
                 pass
         elif index is not None:
             try:
                 with open(self.get_snapshot_path(index), "rb") as f:
-                    return config, torch.load(f, map_location=device)
+                    return torch.load(f, map_location=device)
             except EOFError:
                 pass
         else:
@@ -82,7 +105,7 @@ class SnapshotSaver(object):
                 file_path = os.path.join(self.snapshots_folder, file)
                 try:
                     with open(file_path, "rb") as f:
-                        return config, torch.load(f, map_location=device)
+                        return torch.load(f, map_location=device)
                 except EOFError:
                     pass
 

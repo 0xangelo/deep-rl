@@ -42,17 +42,19 @@ def tqdm_out():
 
 def trange(*args, **kwargs):
     """
-    A wrapper for tqdm.trange, automatically setting file=std_out() if not
-    specified.
+    A wrapper for tqdm.trange, automatically setting file=std_out() and 
+    dynamic_ncols=True if not specified.
     """
     if 'file' not in kwargs: kwargs['file'] = std_out()
+    if 'dynamic_ncols' not in kwargs: kwargs['dynamic_ncols'] = True
     return _trange(*args, **kwargs)
 
 
 def tqdm(*args, **kwargs):
     """
-    A wrapper for tqdm.tqdm, automatically setting file=std_out() if not
-    specified.
+    A wrapper for tqdm.tqdm, automatically setting file=std_out() and 
+    dynamic_ncols=True if not specified.
     """
     if 'file' not in kwargs: kwargs['file'] = std_out()
+    if 'dynamic_ncols' not in kwargs: kwargs['dynamic_ncols'] = True
     return _tqdm(*args, **kwargs)

@@ -9,18 +9,17 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
         scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, 1)
 
     # Algorithm main loop
-    with EnvPool(env, env_maker, n_envs=n_envs) as env_pool:
-        for updt in trange(last_iter + 1, n_iter, desc="Training", unit="updt",
-                           dynamic_ncols=True):
+    with EnvPool(env_maker, n_envs=n_envs) as env_pool:
+        for updt in trange(last_iter + 1, n_iter, desc="Training", unit="updt"):
             logger.info("Starting iteration {}".format(updt))
             logger.logkv("Iteration", updt)
             
             logger.info("Start collecting samples")
-            trajs = parallel_collect_samples(env_pool, policy, n_batch)
+            buffer = parallel_collect_samples(env_pool, policy, n_batch)
             
             logger.info("Computing policy gradient variables")
             all_obs, all_acts, all_advs, all_dists = compute_pg_vars(
-                trajs, policy, baseline, gamma, gaelam
+                buffer, policy, baseline, gamma, gaelam
             )
 
             logger.info("Applying policy gradient")
@@ -32,13 +31,13 @@ def vanilla(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             optimizer.step()
             
             logger.info("Updating baseline")
-            baseline.update(trajs)
+            baseline.update(buffer)
 
             logger.info("Logging information")
             logger.logkv("Objective", J0.item())
             log_reward_statistics(env)
-            log_baseline_statistics(trajs)
-            log_action_distribution_statistics(all_dists, policy, all_obs)
+            log_baseline_statistics(buffer)
+            log_action_distribution_statistics(buffer, policy)
             logger.dumpkvs()
 
             if snapshot_saver is not None:

@@ -17,29 +17,29 @@ def compute_pg_vars(buffer, policy, baseline, gamma, gaelam):
     Compute variables needed for various policy gradient algorithms
     """
     observations = buffer["observations"]
-    actions = buffer["actions"]
-    rewards = buffer["rewards"]
-    returns = buffer["returns"] = np.empty_like(rewards)
-    baselines = buffer["baselines"] = baseline(torch.as_tensor(
-        observations)).numpy()
-    advantages = buffer["advantages"] = np.empty_like(rewards)
-    finishes = buffer.pop("finishes")
+    actions      = buffer["actions"]
+    rewards      = buffer["rewards"]
+    returns      = buffer["returns"] = np.empty_like(rewards)
+    baselines    = buffer["baselines"] = baseline(
+        torch.as_tensor(observations)).numpy()
+    advantages   = buffer["advantages"] = np.empty_like(rewards)
 
-    beg = 0
-    for end, finished, last_obs in sorted(finishes, key=lambda x: x[0]):
+    ends, finishes, last_obs = buffer.pop("finishes")
+    last_vals = baseline(torch.as_tensor(np.stack(last_obs))).numpy()
+    intervals = [slice(*inter) for inter in zip([0] + ends[:-1], ends)]
+
+    for inter, finished, last_val in zip(intervals, finishes, last_vals):
         # If already finished, the future cumulative rewards starting from
         # the final state is 0
-        value = [0] if finished else baseline(torch.as_tensor(
-            last_obs)).numpy()[np.newaxis]
+        last_val = [0] if finished else last_val[np.newaxis]
         # This is useful when fitting baselines. It uses the baseline prediction
         # of the last state value to perform Bellman backup if the trajectory is
         # not finished.
-        extended_rewards = np.concatenate((rewards[beg:end], value))
-        returns[beg:end] = discount_cumsum(extended_rewards, gamma)[:-1]
-        values = np.concatenate((baselines[beg:end], value))
-        deltas = (rewards[beg:end] + gamma * values[1:] - values[:-1])
-        advantages[beg:end] = discount_cumsum(deltas, gamma * gaelam)
-        beg = end
+        extended_rewards  = np.concatenate((rewards[inter], last_val))
+        returns[inter]    = discount_cumsum(extended_rewards, gamma)[:-1]
+        values            = np.concatenate((baselines[inter], last_val))
+        deltas            = rewards[inter] + gamma * values[1:] - values[:-1]
+        advantages[inter] = discount_cumsum(deltas, gamma * gaelam)
 
     # Normalizing the advantage values can make the algorithm more robust to
     # reward scaling

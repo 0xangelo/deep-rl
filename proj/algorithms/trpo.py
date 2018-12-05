@@ -35,8 +35,7 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
 
     # Algorithm main loop
     with EnvPool(env_maker, n_envs=n_envs) as env_pool:
-        for updt in trange(last_iter + 1, n_iter, desc="Training", unit="updt",
-                           dynamic_ncols=True):
+        for updt in trange(last_iter + 1, n_iter, desc="Training", unit="updt"):
             logger.info("Starting iteration {}".format(updt))
             logger.logkv("Iteration", updt)
             

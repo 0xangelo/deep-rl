@@ -27,6 +27,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 import os, os.path as osp, sys, json, shutil, datetime, dateutil.tz
+from .tqdm_util import tqdm_out
 from collections import OrderedDict
 
 
@@ -261,23 +262,24 @@ class session(object):
     # Set to a LoggerContext object using enter/exit or context manager
     CURRENT = None  
 
-    def __init__(self, path, format_strs=None, variant=None):
+    def __init__(self, path, format_strs=None, tqdm=True):
         self.path = path
+        self.tqdm= tqdm
         if format_strs is None:
             format_strs = LOG_OUTPUT_FORMATS
         self.output_formats = [make_output_format(f, path) for f in format_strs]
 
-        if variant is not None:
-            with open(osp.join(path, 'variant.json'), 'at') as fp:
-                json.dump(variant, fp)
-
-
     def __enter__(self):
+        if self.tqdm:
+            self.tqdm_out = tqdm_out()
+            self.tqdm_out.__enter__()
         os.makedirs(self.evaluation_dir(), exist_ok=True)
         Logger.CURRENT = Logger(
             path=self.path, output_formats=self.output_formats)
 
     def __exit__(self, *args):
+        if self.tqdm:
+            self.tqdm_out.__exit__(*args)
         Logger.CURRENT.close()
         Logger.CURRENT = Logger.DEFAULT
 
