@@ -1,25 +1,25 @@
 """
-This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the 
+This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the
 Berkeley Deep RL Bootcamp, August 2017. Bootcamp website with slides and lecture
 videos: https://sites.google.com/view/deep-rl-bootcamp/.
 
 Copyright 2017 Deep RL Bootcamp Organizers.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of 
-this software and associated documentation files (the "Software"), to deal in 
-the Software without restriction, including without limitation the rights to 
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
 use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so, 
+the Software, and to permit persons to whom the Software is furnished to do so,
 subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all 
+The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR 
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN 
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
@@ -38,6 +38,7 @@ gym.logger.set_level(gym.logger.ERROR)
 class EnvMaker(object):
     def __init__(self, env_id):
         self.env_id = env_id
+        self.__name__ = env_id
 
     def make(self, pytorch=False):
         env = gym.make(self.env_id)
@@ -46,7 +47,7 @@ class EnvMaker(object):
             resume = True
             force = False
         else:
-            monitor_dir = "/tmp/gym-monitoring"
+            monitor_dir = "/tmp/proj_exp/gym-monitoring"
             resume = False
             force = True
         env = gym.wrappers.Monitor(env, directory=monitor_dir, force=force,
@@ -64,7 +65,7 @@ class PyTorchEnv(gym.Wrapper):
     def __init__(self, env):
         super().__init__(env)
         self.obs_to_tensor = observations.obs_to_tensor(env.observation_space)
-        
+
     def step(self, action):
         observation, reward, done, info = self.env.step(action.cpu().numpy())
         return self.obs_to_tensor(observation), reward, done, info
@@ -252,7 +253,7 @@ class LazyFrames(object):
         stored once. It exists purely to optimize memory usage which can be huge
         for DQN's 1M frames replay buffers.
 
-        This object should only be converted to numpy array before being passed 
+        This object should only be converted to numpy array before being passed
         to the model.
 
         You'd not belive how complex the previous solution was.

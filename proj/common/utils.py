@@ -4,26 +4,23 @@ from torch.autograd import grad
 
 
 def set_global_seeds(seed):
-    if seed is None:
-        seed = random.randint(0,2**32)
     np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
-    return seed
 
 
 def discount_cumsum(x, discount):
     """
     magic from rllab for computing discounted cumulative sums of vectors.
 
-    input: 
-        vector x, 
-        [x0, 
-         x1, 
+    input:
+        vector x,
+        [x0,
+         x1,
          x2]
 
     output:
-        [x0 + discount * x1 + discount^2 * x2,  
+        [x0 + discount * x1 + discount^2 * x2,
          x1 + discount * x2,
          x2]
     """
@@ -32,7 +29,7 @@ def discount_cumsum(x, discount):
 
 def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
     """
-    Demmel p 312. Approximately solve x = A^{-1}b, or Ax = b, 
+    Demmel p 312. Approximately solve x = A^{-1}b, or Ax = b,
     where we only have access to f: x -> Ax
     """
     p = b.clone()

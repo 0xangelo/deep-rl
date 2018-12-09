@@ -1,5 +1,5 @@
 """
-This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the 
+This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the
 Berkeley Deep RL Bootcamp, August 2017. Bootcamp website with slides and lecture
 videos: https://sites.google.com/view/deep-rl-bootcamp/.
 
@@ -7,27 +7,28 @@ Code adapted from OpenAI Baselines: https://github.com/openai/baselines
 
 Copyright 2017 Deep RL Bootcamp Organizers.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of 
-this software and associated documentation files (the "Software"), to deal in 
-the Software without restriction, including without limitation the rights to 
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
 use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
 the Software, and to permit persons to whom the Software is furnished to do so,
 subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all 
+The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR 
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN 
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 
 import os, os.path as osp, sys, json, shutil, datetime, dateutil.tz
 from .tqdm_util import tqdm_out
+from .saver import SnapshotSaver
 from collections import OrderedDict
 
 
@@ -143,7 +144,7 @@ def dumpkvs():
     """
     Write all of the diagnostics from the current iteration
 
-    level: int. (see old_logger.py docs) If the global logger level is higher 
+    level: int. (see old_logger.py docs) If the global logger level is higher
                 than the level argument here, don't print to stdout.
     """
     Logger.CURRENT.dumpkvs()
@@ -151,7 +152,7 @@ def dumpkvs():
 
 def log(*args, level=INFO):
     """
-    Write the sequence of args, with no separators, to the console and output 
+    Write the sequence of args, with no separators, to the console and output
     files (if you've configured an output file).
     """
     Logger.CURRENT.log(*args, level=level)
@@ -189,15 +190,38 @@ def get_level():
 
 def get_dir():
     """
-    Get directory that log files are being written to. Will be None if there is 
+    Get directory that log files are being written to. Will be None if there is
     no output directory (i.e., if you didn't call start).
     """
     return Logger.CURRENT.get_dir()
 
 
+# Snapshot saving API, forwarded
+# ----------------------------------------
+def save_config(config):
+    Logger.CURRENT.saver.save_config(config)
+
+
+def get_config():
+    return Logger.CURRENT.saver.get_config()
+
+
+def save_state(index, state):
+    Logger.CURRENT.saver.save_state(index, state)
+
+
+def get_state():
+    return Logger.CURRENT.saver.get_state()
+
+
 # ================================================================
 # Backend
 # ================================================================
+
+
+class Nop(object):
+    def nop(*args, **kw): pass
+    def __getattr__(self, _): return self.nop
 
 
 class Logger(object):
@@ -207,11 +231,15 @@ class Logger(object):
     # Current logger being used by the free functions above
     CURRENT = None
 
-    def __init__(self, path, output_formats):
+    def __init__(self, path, output_formats, **saver_kwargs):
         self.name2val = OrderedDict()  # values this iteration
         self.level = INFO
         self.path = path
         self.output_formats = output_formats
+        if path is not None:
+            self.saver = SnapshotSaver(path, **saver_kwargs)
+        else:
+            self.saver = Nop()
 
     # Logging API, forwarded
     # ----------------------------------------
@@ -260,14 +288,15 @@ class session(object):
     Context manager that sets up the loggers for an experiment.
     """
     # Set to a LoggerContext object using enter/exit or context manager
-    CURRENT = None  
+    CURRENT = None
 
-    def __init__(self, path, format_strs=None, tqdm=True):
+    def __init__(self, path, format_strs=None, tqdm=True, **saver_kwargs):
         self.path = path
-        self.tqdm= tqdm
+        self.tqdm = tqdm
         if format_strs is None:
             format_strs = LOG_OUTPUT_FORMATS
         self.output_formats = [make_output_format(f, path) for f in format_strs]
+        self.saver_kwargs = saver_kwargs
 
     def __enter__(self):
         if self.tqdm:
@@ -275,7 +304,9 @@ class session(object):
             self.tqdm_out.__enter__()
         os.makedirs(self.evaluation_dir(), exist_ok=True)
         Logger.CURRENT = Logger(
-            path=self.path, output_formats=self.output_formats)
+            path=self.path, output_formats=self.output_formats,
+            **self.saver_kwargs
+        )
 
     def __exit__(self, *args):
         if self.tqdm:

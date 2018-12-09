@@ -1,11 +1,11 @@
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from ..common.utils import conjugate_gradient, fisher_vector_product, flat_grad
-from ..common.alg_utils import *
+from proj.common.utils import conjugate_gradient, fisher_vector_product, flat_grad
+from proj.common.alg_utils import *
 
 
 def line_search(f, x0, dx, expected_improvement, y0=None, accept_ratio=0.1,
                 backtrack_ratio=0.8, max_backtracks=15, atol=1e-7):
-    
+
     if y0 is None:
         y0 = f(x0)
 
@@ -29,19 +29,28 @@ def line_search(f, x0, dx, expected_improvement, y0=None, accept_ratio=0.1,
     return x0
 
 
-def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(), 
+def trpo(env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
          n_batch=2000, last_iter=-1, gamma=0.99, gaelam=0.97,
-         kl_frac=0.5, delta=0.01, snapshot_saver=None):
+         kl_frac=0.5, delta=0.01):
+
+    env = env_maker.make()
+    policy = policy.pop('class')(env, **policy)
+    baseline = baseline.pop('class')(env, **baseline)
+
+    if last_iter > -1:
+        state = logger.get_state(last_iter+1)
+        policy.load_state_dict(state['policy'])
+        baseline.load_state_dict(state['baseline'])
 
     # Algorithm main loop
     with EnvPool(env_maker, n_envs=n_envs) as env_pool:
         for updt in trange(last_iter + 1, n_iter, desc="Training", unit="updt"):
             logger.info("Starting iteration {}".format(updt))
             logger.logkv("Iteration", updt)
-            
+
             logger.info("Start collecting samples")
             buffer = parallel_collect_samples(env_pool, policy, n_batch)
-            
+
             logger.info("Computing policy gradient variables")
             all_obs, all_acts, all_advs, all_dists = compute_pg_vars(
                 buffer, policy, baseline, gamma, gaelam
@@ -61,7 +70,7 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                 new_dists.likelihood_ratios(all_dists, all_acts) * all_advs
             )
             pol_grad = flat_grad(surr_loss, policy.parameters())
-            
+
             logger.info("Computing truncated natural gradient")
             F_0 = lambda v: fisher_vector_product(v, subsamp_obs, policy)
             descent_direction = conjugate_gradient(F_0, pol_grad)
@@ -82,7 +91,7 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                     new_dists.likelihood_ratios(all_dists, all_acts) * all_advs)
                 avg_kl = kl(all_dists, new_dists).mean().item()
                 return surr_loss.item() + 1e100 * max(avg_kl - delta, 0.)
-                
+
             new_params = line_search(
                 f_barrier,
                 parameters_to_vector(policy.parameters()),
@@ -101,13 +110,12 @@ def trpo(env, env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             log_action_distribution_statistics(buffer, policy)
             logger.dumpkvs()
 
-            if snapshot_saver is not None:
-                logger.info("Saving snapshot")
-                snapshot_saver.save_state(
-                    updt+1,
-                    dict(
-                        alg=dict(last_iter=updt),
-                        policy=policy.state_dict(),
-                        baseline=baseline.state_dict()
-                    )
+            logger.info("Saving snapshot")
+            logger.save_state(
+                updt+1,
+                dict(
+                    alg=dict(last_iter=updt),
+                    policy=policy.state_dict(),
+                    baseline=baseline.state_dict()
                 )
+            )

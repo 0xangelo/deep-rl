@@ -1,25 +1,25 @@
 """
-This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the 
+This project was developed by Rocky Duan, Peter Chen, Pieter Abbeel for the
 Berkeley Deep RL Bootcamp, August 2017. Bootcamp website with slides and lecture
 videos: https://sites.google.com/view/deep-rl-bootcamp/.
 
 Copyright 2017 Deep RL Bootcamp Organizers.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of 
-this software and associated documentation files (the "Software"), to deal in 
-the Software without restriction, including without limitation the rights to 
+Permission is hereby granted, free of charge, to any person obtaining a copy of
+this software and associated documentation files (the "Software"), to deal in
+the Software without restriction, including without limitation the rights to
 use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so, 
+the Software, and to permit persons to whom the Software is furnished to do so,
 subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all 
+The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
- FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR 
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER 
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN 
+ FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
@@ -107,7 +107,7 @@ def make_plot(plot_list, title=None, xtitle=None, ytitle=None):
                 y=y_upper + y_lower[::-1],
                 fill='tozerox',
                 fillcolor=core.hex_to_rgb(color, 0.2),
-                line=go.scatter.Line(color='rgba(0,0,0,0)'), 
+                line=go.scatter.Line(color='rgba(0,0,0,0)'),
                 showlegend=False,
                 legendgroup=plt.legend,
                 hoverinfo='none'
@@ -206,7 +206,7 @@ def get_plot_instruction(
         split_legends = list(map(str, vs))
     else:
         split_selectors = [selector]
-        split_legends = [selector.extract()[0].params["env"]]
+        split_legends = [selector.extract()[0].params["env_maker"]]
     plots = []
     counter = 0
     for split_selector, split_legend in zip(split_selectors, split_legends):
@@ -226,7 +226,7 @@ def get_plot_instruction(
         to_plot = []
         for group_selector, group_legend in zip(group_selectors, group_legends):
             # all experiments with the same name
-            filtered_data = group_selector.extract() 
+            filtered_data = group_selector.extract()
 
             if len(filtered_data) > 0:
 

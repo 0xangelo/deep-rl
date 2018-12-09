@@ -1,37 +1,5 @@
-import os, json, cloudpickle.cloudpickle as cpkl, torch
-
-
-def convert_json(obj):
-    """ Convert obj to a version which can be serialized with JSON. """
-    if is_json_serializable(obj):
-        return obj
-    else:
-        if isinstance(obj, dict):
-            return {convert_json(k): convert_json(v) 
-                    for k,v in obj.items()}
-
-        elif isinstance(obj, tuple):
-            return (convert_json(x) for x in obj)
-
-        elif isinstance(obj, list):
-            return [convert_json(x) for x in obj]
-
-        elif hasattr(obj,'__name__') and not('lambda' in obj.__name__):
-            return convert_json(obj.__name__)
-
-        elif hasattr(obj,'__dict__') and obj.__dict__:
-            obj_dict = {convert_json(k): convert_json(v) 
-                        for k,v in obj.__dict__.items()}
-            return {str(obj): obj_dict}
-
-        return str(obj)
-
-def is_json_serializable(v):
-    try:
-        json.dumps(v)
-        return True
-    except:
-        return False
+import os, torch, json, cloudpickle.cloudpickle as cpkl
+from proj.json_util import convert_json
 
 # ==============================
 # Saving snapshots
@@ -57,8 +25,8 @@ class SnapshotSaver(object):
         with open(os.path.join(self.path, "config.pkl"), "wb") as f:
             torch.save(config, f, pickle_module=cpkl, pickle_protocol=-1)
 
-        with open(os.path.join(self.path, "variant.json"), "at") as f:
-            json.dump(config, f)
+        with open(os.path.join(self.path, "variant.json"), "wt") as f:
+            json.dump(convert_json(config), f)
 
     def get_config(self):
         with open(os.path.join(self.path, "config.pkl"), "rb") as f:
@@ -108,4 +76,3 @@ class SnapshotSaver(object):
                         return torch.load(f, map_location=device)
                 except EOFError:
                     pass
-
