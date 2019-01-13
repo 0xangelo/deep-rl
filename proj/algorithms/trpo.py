@@ -31,11 +31,13 @@ def line_search(f, x0, dx, expected_improvement, y0=None, accept_ratio=0.1,
 
 def trpo(env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
          n_batch=2000, last_iter=-1, gamma=0.99, gaelam=0.97,
-         kl_frac=0.5, delta=0.01):
+         kl_frac=0.2, delta=0.01, val_iters=80, val_lr=1e-3):
 
+    logger.save_config(locals())
     env = env_maker.make()
     policy = policy.pop('class')(env, **policy)
     baseline = baseline.pop('class')(env, **baseline)
+    val_optim = torch.optim.Adam(baseline.parameters(), lr=val_lr)
 
     if last_iter > -1:
         state = logger.get_state(last_iter+1)
@@ -102,7 +104,12 @@ def trpo(env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             vector_to_parameters(new_params, policy.parameters())
 
             logger.info("Updating baseline")
-            baseline.update(buffer)
+            loss_fn = torch.nn.MSELoss()
+            for _ in range(val_iters):
+                targets = 0.1 * buffer["baselines"] + 0.9 * buffer["returns"]
+                val_optim.zero_grad()
+                loss_fn(baseline(all_obs), targets).backward()
+                val_optim.step()
 
             logger.info("Logging information")
             log_reward_statistics(env)
@@ -116,6 +123,7 @@ def trpo(env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                 dict(
                     alg=dict(last_iter=updt),
                     policy=policy.state_dict(),
-                    baseline=baseline.state_dict()
+                    baseline=baseline.state_dict(),
+                    val_optim=val_optim.state_dict(),
                 )
             )

@@ -27,7 +27,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 import os
 
 import flask
-from proj.viskit import core
+from proj.utils.viskit import core
 import sys
 import argparse
 import json
@@ -64,7 +64,10 @@ def sliding_mean(data_array, window=5):
     return np.array(new_list)
 
 
-app = flask.Flask(__name__, static_url_path='/static')
+app = flask.Flask(
+    __name__,
+    static_url_path='/static',
+)
 
 exps_data = None
 plottable_keys = None

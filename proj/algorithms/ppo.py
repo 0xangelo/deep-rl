@@ -1,15 +1,15 @@
 from proj.common.alg_utils import *
 
-def vanilla(env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
-            n_batch=2000, last_iter=-1, gamma=0.99, gaelam=0.97,
-            optimizer={'class': torch.optim.Adam}, val_iters=80, val_lr=1e-3):
+def ppo(env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
+            n_batch=2000, last_iter=-1, gamma=0.99, gaelam=0.97, clip_ratio=0.2,
+            pol_lr=3e-4, val_lr=1e-3, pol_iters=80, val_iters=80, target_kl=0.01):
 
     logger.save_config(locals())
 
     env = env_maker.make()
     policy = policy.pop('class')(env, **policy)
     baseline = baseline.pop('class')(env, **baseline)
-    pol_optim = optimizer.pop('class')(policy.parameters(), **optimizer)
+    pol_optim = torch.optim.Adam(policy.parameters(), lr=pol_lr)
     val_optim = torch.optim.Adam(baseline.parameters(), lr=val_lr)
 
     if last_iter > -1:
@@ -29,15 +29,29 @@ def vanilla(env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             buffer = parallel_collect_samples(env_pool, policy, n_batch)
 
             logger.info("Computing policy gradient variables")
-            all_obs, all_acts, all_advs, all_dists = compute_pg_vars(
+            all_obs, all_acts, all_advs, old_dists = compute_pg_vars(
                 buffer, policy, baseline, gamma, gaelam
             )
 
-            logger.info("Applying policy gradient")
-            J0 = torch.mean(policy.dists(all_obs).log_prob(all_acts) * all_advs)
-            pol_optim.zero_grad()
-            (-J0).backward()
-            pol_optim.step()
+            logger.info("Minimizing surrogate loss")
+            for itr in range(pol_iters):
+                new_dists = policy.dists(all_obs)
+                ratio = new_dists.likelihood_ratios(old_dists, all_acts)
+                min_advs = torch.where(
+                    all_advs > 0,
+                    (1 + clip_ratio) * all_advs,
+                    (1 - clip_ratio) * all_advs
+                )
+                pol_optim.zero_grad()
+                torch.mean(- torch.min(ratio * all_advs, min_advs)).backward()
+                pol_optim.step()
+                with torch.no_grad():
+                    mean_kl = kl(old_dists, new_dists).mean()
+                if mean_kl > 1.5 * target_kl:
+                    logger.info("Stopped at step {} due to reaching max kl".
+                                format(itr))
+                    break
+            logger.logkv("StopIter", itr)
 
             logger.info("Updating baseline")
             loss_fn = torch.nn.MSELoss()
@@ -48,7 +62,6 @@ def vanilla(env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
                 val_optim.step()
 
             logger.info("Logging information")
-            logger.logkv("Objective", J0.item())
             log_reward_statistics(env)
             log_baseline_statistics(buffer)
             log_action_distribution_statistics(buffer, policy)

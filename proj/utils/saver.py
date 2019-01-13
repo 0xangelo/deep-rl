@@ -1,5 +1,5 @@
 import os, torch, json, cloudpickle.cloudpickle as cpkl
-from proj.json_util import convert_json
+from proj.utils.json_util import convert_json
 
 # ==============================
 # Saving snapshots
@@ -20,18 +20,6 @@ class SnapshotSaver(object):
                     latest_only = False
         self.latest_only = latest_only
 
-    def save_config(self, config):
-        os.makedirs(self.path, exist_ok=True)
-        with open(os.path.join(self.path, "config.pkl"), "wb") as f:
-            torch.save(config, f, pickle_module=cpkl, pickle_protocol=-1)
-
-        with open(os.path.join(self.path, "variant.json"), "wt") as f:
-            json.dump(convert_json(config), f)
-
-    def get_config(self):
-        with open(os.path.join(self.path, "config.pkl"), "rb") as f:
-            return torch.load(f, map_location=device)
-
     @property
     def snapshots_folder(self):
         return os.path.join(self.path, "snapshots")
@@ -42,6 +30,20 @@ class SnapshotSaver(object):
             "latest.pkl" if self.latest_only else "%d.pkl" % index
         )
 
+    def get_config_path(self):
+        return os.path.join(self.snapshots_folder, "config.pkl")
+
+    def save_config(self, config):
+        file_path = self.get_config_path()
+        os.makedirs(os.path.dirname(file_path), exist_ok=True)
+        with open(file_path, "wb") as f:
+            torch.save(config, f, pickle_module=cpkl, pickle_protocol=-1)
+
+    def get_config(self, device='cpu'):
+        device = torch.device(device)
+        with open(self.get_config_path(), "rb") as f:
+            return torch.load(f, map_location=device)
+
     def save_state(self, index, state):
         if index % self.interval == 0:
             file_path = self.get_snapshot_path(index)
@@ -49,10 +51,8 @@ class SnapshotSaver(object):
             with open(file_path, "wb") as f:
                 torch.save(state, f, pickle_module=cpkl, pickle_protocol=-1)
 
-    def get_state(self, index=None):
-        device = torch.device('cpu')
-        if torch.cuda.is_available():
-            device = torch.device('cuda')
+    def get_state(self, index=None, device='cpu'):
+        device = torch.device(device)
         if self.latest_only:
             try:
                 with open(self.get_snapshot_path(0), "rb") as f:

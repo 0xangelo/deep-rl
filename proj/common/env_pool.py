@@ -1,6 +1,6 @@
 import sys, gym, torch, numpy as np, multiprocessing as mp, subprocess
-from .tqdm_util import tqdm, trange
-from .observations import obs_to_tensor
+from proj.utils.tqdm_util import tqdm, trange
+from proj.common.observations import obs_to_tensor
 
 import tblib.pickling_support
 tblib.pickling_support.install()
@@ -52,8 +52,8 @@ def env_worker(env_maker, conn, n_worker_envs):
 
 class EnvPool(object):
     """
-    Using a pool of workers to run multiple environments in parallel. This 
-    implementation supports multiple environments per worker to be as flexible 
+    Using a pool of workers to run multiple environments in parallel. This
+    implementation supports multiple environments per worker to be as flexible
     as possible.
     """
 
@@ -173,21 +173,21 @@ class EnvPool(object):
 
 def parallel_collect_samples(env_pool, policy, num_samples):
     """
-    Collect trajectories in parallel using a pool of workers. Actions are 
-    computed using the provided policy. For each worker, \lfloor num_samples / 
+    Collect trajectories in parallel using a pool of workers. Actions are
+    computed using the provided policy. For each worker, \lfloor num_samples /
     env_pool.n_workers \rfloor timesteps are sampled. This means that some of
-    the trajectories will not be executed until termination. These partial 
-    trajectories will have their last state index recorded in "finishes" with 
+    the trajectories will not be executed until termination. These partial
+    trajectories will have their last state index recorded in "finishes" with
     a False flag.
 
-    When starting, it will first check if env_pool.last_obs is set, and if so, 
-    it will start from there rather than resetting all environments. This is 
+    When starting, it will first check if env_pool.last_obs is set, and if so,
+    it will start from there rather than resetting all environments. This is
     useful for reusing the same episode.
 
     :param env_pool: An instance of EnvPool.
     :param policy: The policy used to select actions.
     :param num_samples: The approximate total number of samples to collect.
-    :return: A dictionary with all observations, actions, rewards and tuples 
+    :return: A dictionary with all observations, actions, rewards and tuples
     of last index, finished flag and last observation of each trajectory
     """
     offset      = num_samples // env_pool.n_envs
@@ -226,5 +226,3 @@ def parallel_collect_samples(env_pool, policy, num_samples):
         rewards=all_rews,
         finishes=finishes
     )
-
-

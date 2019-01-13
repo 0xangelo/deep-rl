@@ -27,8 +27,9 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 import os, os.path as osp, sys, json, shutil, datetime, dateutil.tz
-from .tqdm_util import tqdm_out
-from .saver import SnapshotSaver
+from proj.utils.tqdm_util import tqdm_out
+from proj.utils.saver import SnapshotSaver
+from proj.utils.json_util import convert_json
 from collections import OrderedDict
 
 
@@ -199,7 +200,7 @@ def get_dir():
 # Snapshot saving API, forwarded
 # ----------------------------------------
 def save_config(config):
-    Logger.CURRENT.saver.save_config(config)
+    Logger.CURRENT.save_config(config)
 
 
 def get_config():
@@ -231,11 +232,12 @@ class Logger(object):
     # Current logger being used by the free functions above
     CURRENT = None
 
-    def __init__(self, path, output_formats, **saver_kwargs):
+    def __init__(self, path, output_formats, exp_name=None, **saver_kwargs):
         self.name2val = OrderedDict()  # values this iteration
         self.level = INFO
         self.path = path
         self.output_formats = output_formats
+        self.exp_name = exp_name
         if path is not None:
             self.saver = SnapshotSaver(path, **saver_kwargs)
         else:
@@ -256,6 +258,14 @@ class Logger(object):
         timestamp = now.strftime('[%Y-%m-%d %H:%M:%S.%f %Z] ')
         if self.level <= level:
             self._do_log((timestamp,) + args)
+
+    def save_config(self, config):
+        self.saver.save_config(config)
+        config_json = convert_json(config)
+        if self.exp_name is not None:
+            config_json["exp_name"] = self.exp_name
+        with open(os.path.join(self.path, "variant.json"), "wt") as f:
+            json.dump(config_json, f)
 
     # Configuration
     # ----------------------------------------
@@ -290,13 +300,13 @@ class session(object):
     # Set to a LoggerContext object using enter/exit or context manager
     CURRENT = None
 
-    def __init__(self, path, format_strs=None, tqdm=True, **saver_kwargs):
-        self.path = path
+    def __init__(self, format_strs=None, tqdm=True, **logger_kwargs):
         self.tqdm = tqdm
         if format_strs is None:
             format_strs = LOG_OUTPUT_FORMATS
+        self.path = path = logger_kwargs['path']
         self.output_formats = [make_output_format(f, path) for f in format_strs]
-        self.saver_kwargs = saver_kwargs
+        self.logger_kwargs = logger_kwargs
 
     def __enter__(self):
         if self.tqdm:
@@ -304,8 +314,8 @@ class session(object):
             self.tqdm_out.__enter__()
         os.makedirs(self.evaluation_dir(), exist_ok=True)
         Logger.CURRENT = Logger(
-            path=self.path, output_formats=self.output_formats,
-            **self.saver_kwargs
+            output_formats=self.output_formats,
+            **self.logger_kwargs
         )
 
     def __exit__(self, *args):

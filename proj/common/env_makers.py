@@ -25,7 +25,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
 import os, cv2, gym, gym.logger, numpy as np
-from . import logger, observations
+from proj.utils import logger
+from proj.common import observations
 from gym import spaces
 from gym.envs.atari.atari_env import AtariEnv
 from collections import deque

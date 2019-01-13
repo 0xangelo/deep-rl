@@ -1,6 +1,6 @@
 import sys, os, os.path as osp, string, subprocess, random
 import base64, numpy as np, cloudpickle, zlib
-from proj.common.saver import convert_json
+from proj.utils.json_util import convert_json
 
 DIV_LINE_WIDTH = 80
 DEFAULT_SHORTHAND = True
@@ -49,7 +49,7 @@ def create_experiment(exp_name, thunk, seed=random.randint(0,2**32),
     log_dir = osp.join(log_dir, relpath)
 
     def thunk_plus():
-        from proj.common import logger
+        from proj.utils import logger
         from proj.common.utils import set_global_seeds
         from proj.common.env_makers import EnvMaker
 
@@ -59,8 +59,7 @@ def create_experiment(exp_name, thunk, seed=random.randint(0,2**32),
             kwargs['env_maker'] = EnvMaker(kwargs['env'])
             del kwargs['env']
 
-        with logger.session(log_dir):
-            logger.save_config({'exp_name': exp_name, **kwargs})
+        with logger.session(path=log_dir, exp_name=exp_name):
             thunk(**kwargs)
     return thunk_plus
 
@@ -340,6 +339,8 @@ class ExperimentGrid:
         # Run the variants.
         for var in variants:
             exp_name = self.variant_name(var)
+            print("Running experiment:", exp_name)
+
             thunk_plus = create_experiment(
                 exp_name, thunk, log_dir=log_dir, datestamp=datestamp, **var
             )

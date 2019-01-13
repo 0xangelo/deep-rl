@@ -1,6 +1,7 @@
-import sys, gym, proj.algorithms
+import sys, os, os.path as osp, subprocess, gym
 from textwrap import dedent
-from proj.exp_grid import ExperimentGrid
+import proj.algorithms
+from proj.utils.exp_grid import ExperimentGrid
 from proj.common.models import *
 
 
@@ -103,13 +104,12 @@ def parse_and_execute_grid_search(cmd, args):
     for k,v in arg_dict.items():
         eg.add(k, v)
     eg.run(algo, **run_kwargs)
-    # eg.print()
 
 
 if __name__ == '__main__':
     cmd = sys.argv[1]
-    valid_algos = ['vanilla', 'trpo']
-    valid_utils = ['plot']
+    valid_algos = ['vanilla', 'trpo', 'ppo']
+    valid_utils = ['plot', 'sim_policy']
     valid_cmds = valid_algos + valid_utils
     assert cmd in valid_cmds, \
         "Select an algorithm or utility which is implemented in proj."
@@ -117,3 +117,13 @@ if __name__ == '__main__':
     if cmd in valid_algos:
         args = sys.argv[2:]
         parse_and_execute_grid_search(cmd, args)
+
+    elif cmd in valid_utils:
+        # Execute the correct utility file.
+        if cmd == 'plot': cmd = osp.join('viskit', 'frontend')
+        runfile = osp.join(
+            osp.abspath(osp.dirname(__file__)), 'utils', cmd + '.py'
+        )
+        args = [sys.executable if sys.executable else 'python', runfile] + \
+               sys.argv[2:]
+        subprocess.check_call(args, env=os.environ)

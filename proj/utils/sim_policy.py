@@ -1,5 +1,5 @@
 import gym, click, time, numpy as np, pprint
-from proj.common.saver import SnapshotSaver
+from proj.utils.saver import SnapshotSaver
 
 
 @click.command()
@@ -8,25 +8,23 @@ from proj.common.saver import SnapshotSaver
               type=int, default=None)
 @click.option("--runs", help="Number of episodes to simulate",
               type=int, default=2)
-@click.option("--render", help="""Whether or not to render the 
+@click.option("--norender", help="""Whether or not to render the
               simulation on screen""", is_flag=True)
-def main(path, index, runs, render):
+def main(path, index, runs, norender):
     """
     Loads a snapshot and simulates the corresponding policy and environment.
     """
-    
+
     state = None
     while state is None:
         saver = SnapshotSaver(path, latest_only=(index is None))
-        config, state = saver.get_state(index)
-        if state is None:
+        config, state = saver.get_config(), saver.get_state(index)
+        if config is None or state is None:
             time.sleep(1)
 
-    types, args = config
-    args.update(state['alg'])
     pprint.pprint(config)
-    env = args['alg']['env_maker'].make(pytorch=True)
-    policy = types['policy'](env, **args['policy'])
+    env = config['env_maker'].make(pytorch=True)
+    policy = config['policy'].pop('class')(env, **config['policy'])
     policy.load_state_dict(state['policy'])
 
     for _ in range(runs):
@@ -35,7 +33,7 @@ def main(path, index, runs, render):
         while not done:
             action = policy.action(ob)
             ob, rew, done, _ = env.step(action)
-            if render: env.render()
+            if not norender: env.render()
 
     # keep unwrapping until we get the monitor
     while not isinstance(env, gym.wrappers.Monitor):

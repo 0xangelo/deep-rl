@@ -1,10 +1,10 @@
 import gym, torch, numpy as np, multiprocessing as mp
 from torch.distributions.kl import kl_divergence as kl
-from . import logger
-from .utils import explained_variance_1d, discount_cumsum
-from .tqdm_util import trange
-from .env_pool import EnvPool, parallel_collect_samples
-from .distributions import DiagNormal, Categorical
+from proj.utils import logger
+from proj.utils.tqdm_util import trange
+from proj.common.utils import explained_variance_1d, discount_cumsum
+from proj.common.env_pool import EnvPool, parallel_collect_samples
+from proj.common.distributions import DiagNormal, Categorical
 
 
 # ==============================
@@ -120,4 +120,3 @@ def log_action_distribution_statistics(buffer, policy):
         probs = dists.probs.mean(0)
         for idx in range(probs.numel()):
             logger.logkv('AveragePolicyProb[{}]'.format(idx), probs[idx].item())
-
