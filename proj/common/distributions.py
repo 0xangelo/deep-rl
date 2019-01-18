@@ -14,6 +14,15 @@ class DiagNormal(dists.MultivariateNormal):
             self
         )
 
+    def params(self):
+        return self.loc, self.variance[0].sqrt()
+
+    @classmethod
+    def fromparams(cls, params, extra):
+        scale_tril = torch.diag(extra)
+        return cls(params, scale_tril=scale_tril)
+
+
 class Categorical(dists.Categorical):
     def likelihood_ratios(self, other, variables):
         return torch.exp(self.log_prob(variables) - other.log_prob(variables))
@@ -23,6 +32,13 @@ class Categorical(dists.Categorical):
             dists.Categorical(logits=self.logits.detach()),
             self
         )
+
+    def params(self):
+        return self.logits, None
+
+    @classmethod
+    def fromparams(cls, params, *args):
+        return cls(logits=params)
 
 
 def pd_maker(ac_space, policy):
@@ -38,5 +54,3 @@ def pd_maker(ac_space, policy):
     else:
         raise NotImplementedError
     return build_pd
-
-

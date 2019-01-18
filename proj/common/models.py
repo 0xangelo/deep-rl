@@ -27,7 +27,7 @@ class FeedForwardModel(ABC):
 
 
 class MlpModel(Model, FeedForwardModel):
-    def __init__(self, env, *, hidden_sizes=[64, 64], activation=nn.Tanh,
+    def __init__(self, env, *, hidden_sizes=[32, 32], activation=nn.Tanh,
                  **kwargs):
         super().__init__(env, **kwargs)
         if isinstance(activation, str):
@@ -51,14 +51,14 @@ class MlpModel(Model, FeedForwardModel):
             layers.append(nn.Linear(in_features, out_features))
             layers.append(self.activation())
         layers.append(nn.Linear(in_sizes[-1], self.out_features))
-            
-        return nn.Sequential(*layers) 
+
+        return nn.Sequential(*layers)
 
     @staticmethod
     def initialize(module):
         if isinstance(module, nn.Linear):
             nn.init.orthogonal_(module.weight, gain=math.sqrt(2))
-            nn.init.constant_(module.bias, 0)        
+            nn.init.constant_(module.bias, 0)
 
 
 # ==============================
@@ -71,11 +71,11 @@ class AbstractPolicy(ABC):
         self.ac_space = env.action_space
         self.out_features = n_features(self.ac_space)
         self.make_pd = distributions.pd_maker(self.ac_space, self)
-        
+
     @abstractmethod
     def actions(self, obs):
         """
-        Given a batch of observations, return a batch of actions, 
+        Given a batch of observations, return a batch of actions,
         each sampled from the corresponding action distributions.
 
         Args:
@@ -88,7 +88,7 @@ class AbstractPolicy(ABC):
     @abstractmethod
     def forward(self, x):
         """
-        Given some observations, returns the parameters 
+        Given some observations, returns the parameters
         for the action distributions.
 
         Args:
@@ -109,7 +109,7 @@ class AbstractPolicy(ABC):
     @abstractmethod
     def dists(self, obs):
         """
-        Given a batch of observations, return a batch of corresponding 
+        Given a batch of observations, return a batch of corresponding
         action distributions.
 
         Args:
@@ -124,14 +124,14 @@ class FeedForwardPolicy(AbstractPolicy, FeedForwardModel):
     def __init__(self, env, **kwargs):
         super().__init__(env, **kwargs)
         self.network = self.build_network()
-        
+
         if isinstance(self.ac_space, spaces.Box):
             self.logstd = nn.Parameter(torch.zeros(self.out_features))
 
         self.apply(self.initialize)
         nn.init.orthogonal_(self.network[-1].weight, gain=0.01)
-        nn.init.constant_(self.network[-1].bias, 0)        
-        
+        nn.init.constant_(self.network[-1].bias, 0)
+
     def forward(self, x):
         return self.network(x)
 
@@ -144,7 +144,7 @@ class FeedForwardPolicy(AbstractPolicy, FeedForwardModel):
 
     def dists(self, obs):
         return self.make_pd(self(obs))
-        
+
 
 class MlpPolicy(FeedForwardPolicy, MlpModel):
     pass
@@ -159,7 +159,7 @@ class AbstractBaseline(ABC):
     def forward(self, x):
         """
         Given some observations, compute the baselines.
-        
+
         Args:
             x (Tensor): A batch of observations
 
@@ -167,25 +167,10 @@ class AbstractBaseline(ABC):
         """
         pass
 
-    @abstractmethod
-    def update(self, buffer):
-        """
-        Given a buffer with observations, returns and baselines,
-        update the reinforcement baseline.
-
-        Args:
-        buffer (dict): A buffer containing 'observations', 'returns' and 
-        'baselines' as keys.
-        """
-        pass
-
 
 class ZeroBaseline(AbstractBaseline, Model):
     def forward(self, x):
         return torch.zeros(len(x))
-
-    def update(self, buffer):
-        pass
 
 
 class FeedForwardBaseline(AbstractBaseline, FeedForwardModel):
@@ -204,21 +189,15 @@ class FeedForwardBaseline(AbstractBaseline, FeedForwardModel):
                                          / self.timestep_limit
         return torch.squeeze(self.network(torch.cat((x, ts[:, None]), dim=-1)))
 
-    def update(self, buffer):
-        observations = buffer["observations"]
-        targets = self.mixture_fraction * buffer["baselines"] + \
-                  (1 - self.mixture_fraction) * buffer["returns"]
-
-        loss_fn = nn.MSELoss()
-        optimizer = torch.optim.LBFGS(self.parameters(), max_iter=10)
-        def closure():
-            optimizer.zero_grad()
-            loss = loss_fn(self(observations), targets)
-            loss.backward()
-            return loss
-
-        optimizer.step(closure)
-
 
 class MlpBaseline(FeedForwardBaseline, MlpModel):
     pass
+
+
+def baseline_like_policy(env, policy):
+    if isinstance(policy, MlpModel):
+        return MlpBaseline(
+            env, hidden_sizes=policy.hidden_sizes, activation=nn.ELU
+        )
+    else:
+        raise ValueError("Unrecognized policy type")

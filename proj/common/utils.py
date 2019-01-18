@@ -80,3 +80,9 @@ class HSeries:
 
     def __call__(self, epoch):
         return self.scale * 1 / (epoch + 1)
+
+
+class AttrDict(dict):
+    def __init__(self, *args, **kwargs):
+        super(AttrDict, self).__init__(*args, **kwargs)
+        self.__dict__ = self

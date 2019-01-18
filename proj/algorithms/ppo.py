@@ -1,6 +1,9 @@
 from proj.common.alg_utils import *
+from proj.common.models import baseline_like_policy
+from torch.utils.data import TensorDataset, DataLoader
 
-def ppo(env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
+
+def ppo(env_maker, policy, baseline=None, n_iter=100, n_envs=mp.cpu_count(),
             n_batch=2000, last_iter=-1, gamma=0.99, gaelam=0.97, clip_ratio=0.2,
             pol_lr=3e-4, val_lr=1e-3, pol_iters=80, val_iters=80, target_kl=0.01):
 
@@ -8,7 +11,10 @@ def ppo(env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
 
     env = env_maker.make()
     policy = policy.pop('class')(env, **policy)
-    baseline = baseline.pop('class')(env, **baseline)
+    if baseline is None:
+        baseline = baseline_like_policy(env, policy)
+    else:
+        baseline = baseline.pop('class')(env, **baseline)
     pol_optim = torch.optim.Adam(policy.parameters(), lr=pol_lr)
     val_optim = torch.optim.Adam(baseline.parameters(), lr=val_lr)
 
@@ -34,19 +40,24 @@ def ppo(env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             )
 
             logger.info("Minimizing surrogate loss")
+            all_pars, extra = old_dists.params()
+            dataset = TensorDataset(all_obs, all_acts, all_advs, all_pars)
+            dataloader = DataLoader(dataset, batch_size=512, shuffle=True)
             for itr in range(pol_iters):
-                new_dists = policy.dists(all_obs)
-                ratio = new_dists.likelihood_ratios(old_dists, all_acts)
-                min_advs = torch.where(
-                    all_advs > 0,
-                    (1 + clip_ratio) * all_advs,
-                    (1 - clip_ratio) * all_advs
-                )
-                pol_optim.zero_grad()
-                torch.mean(- torch.min(ratio * all_advs, min_advs)).backward()
-                pol_optim.step()
+                for obs, acts, advs, pars in dataloader:
+                    piold = old_dists.fromparams(pars, extra)
+                    pinew = policy.dists(obs)
+                    ratio = pinew.likelihood_ratios(piold, acts)
+                    min_advs = torch.where(
+                        advs > 0,
+                        (1 + clip_ratio) * advs,
+                        (1 - clip_ratio) * advs
+                    )
+                    pol_optim.zero_grad()
+                    torch.mean(- torch.min(ratio * advs, min_advs)).backward()
+                    pol_optim.step()
                 with torch.no_grad():
-                    mean_kl = kl(old_dists, new_dists).mean()
+                    mean_kl = kl(old_dists, policy.dists(all_obs)).mean()
                 if mean_kl > 1.5 * target_kl:
                     logger.info("Stopped at step {} due to reaching max kl".
                                 format(itr))

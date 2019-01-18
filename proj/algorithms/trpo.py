@@ -1,6 +1,7 @@
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from proj.common.utils import conjugate_gradient, fisher_vector_product, flat_grad
 from proj.common.alg_utils import *
+from proj.common.models import baseline_like_policy
 
 
 def line_search(f, x0, dx, expected_improvement, y0=None, accept_ratio=0.1,
@@ -29,14 +30,17 @@ def line_search(f, x0, dx, expected_improvement, y0=None, accept_ratio=0.1,
     return x0
 
 
-def trpo(env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
+def trpo(env_maker, policy, baseline=None, n_iter=100, n_envs=mp.cpu_count(),
          n_batch=2000, last_iter=-1, gamma=0.99, gaelam=0.97,
-         kl_frac=0.2, delta=0.01, val_iters=80, val_lr=1e-3):
+         kl_frac=0.2, delta=0.01, val_iters=80, val_lr=1e-3, line_search=True):
 
     logger.save_config(locals())
     env = env_maker.make()
     policy = policy.pop('class')(env, **policy)
-    baseline = baseline.pop('class')(env, **baseline)
+    if baseline is None:
+        baseline = baseline_like_policy(env, policy)
+    else:
+        baseline = baseline.pop('class')(env, **baseline)
     val_optim = torch.optim.Adam(baseline.parameters(), lr=val_lr)
 
     if last_iter > -1:
@@ -82,25 +86,29 @@ def trpo(env_maker, policy, baseline, n_iter=100, n_envs=mp.cpu_count(),
             )
             descent_step = descent_direction * scale
 
-            logger.info("Performing line search")
-            expected_improvement = pol_grad.dot(descent_step).item()
+            if line_search:
+                logger.info("Performing line search")
+                expected_improvement = pol_grad.dot(descent_step).item()
 
-            @torch.no_grad()
-            def f_barrier(params):
-                vector_to_parameters(params, policy.parameters())
-                new_dists = policy.dists(all_obs)
-                surr_loss = -torch.mean(
-                    new_dists.likelihood_ratios(all_dists, all_acts) * all_advs)
-                avg_kl = kl(all_dists, new_dists).mean().item()
-                return surr_loss.item() + 1e100 * max(avg_kl - delta, 0.)
+                @torch.no_grad()
+                def f_barrier(params):
+                    vector_to_parameters(params, policy.parameters())
+                    new_dists = policy.dists(all_obs)
+                    surr_loss = -torch.mean(
+                        new_dists.likelihood_ratios(all_dists, all_acts) * all_advs)
+                    avg_kl = kl(all_dists, new_dists).mean().item()
+                    return surr_loss.item() + 1e100 * max(avg_kl - delta, 0.)
 
-            new_params = line_search(
-                f_barrier,
-                parameters_to_vector(policy.parameters()),
-                descent_step,
-                expected_improvement,
-                y0=surr_loss.item()
-            )
+                new_params = line_search(
+                    f_barrier,
+                    parameters_to_vector(policy.parameters()),
+                    descent_step,
+                    expected_improvement,
+                    y0=surr_loss.item()
+                )
+            else:
+                new_params = parameters_to_vector(policy.parameters()) \
+                             - descent_step
             vector_to_parameters(new_params, policy.parameters())
 
             logger.info("Updating baseline")
