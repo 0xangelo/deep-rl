@@ -5,7 +5,7 @@ from .kfac import KFAC
 
 
 def acktr(env_maker, policy, baseline=None, n_iter=100, n_envs=mp.cpu_count(),
-          n_batch=2000, last_iter=-1, gamma=0.99, gaelam=0.97, val_iters=10,
+          n_batch=2000, gamma=0.99, gaelam=0.97, val_iters=10,
           pol_kfac={}, val_kfac={}):
 
     # handling default values
@@ -32,16 +32,16 @@ def acktr(env_maker, policy, baseline=None, n_iter=100, n_envs=mp.cpu_count(),
     val_optim = torch.optim.SGD(baseline.parameters(), lr=1)
     loss_fn = torch.nn.MSELoss()
 
-    if last_iter > -1:
-        state = logger.get_state(last_iter+1)
-        policy.load_state_dict(state['policy'])
-        baseline.load_state_dict(state['baseline'])
-        pol_optim.load_state_dict(state['pol_optim'])
-        val_optim.load_state_dict(state['val_optim'])
+    # if last_iter > -1:
+    #     state = logger.get_state(last_iter+1)
+    #     policy.load_state_dict(state['policy'])
+    #     baseline.load_state_dict(state['baseline'])
+    #     pol_optim.load_state_dict(state['pol_optim'])
+    #     val_optim.load_state_dict(state['val_optim'])
 
     # Algorithm main loop
     with EnvPool(env_maker, n_envs=n_envs) as env_pool:
-        for updt in trange(last_iter + 1, n_iter, desc="Training", unit="updt"):
+        for updt in trange(n_iter, desc="Training", unit="updt"):
             logger.info("Starting iteration {}".format(updt))
             logger.logkv("Iteration", updt)
 
