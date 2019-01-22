@@ -1,28 +1,31 @@
 import contextlib, torch
 import torch.nn.functional as F
-from torch.optim.optimizer import Optimizer
+import torch.optim as optim
 
 
-class KFAC(Optimizer):
-
-    def __init__(self, net, eps, sua=False, pi=False, update_freq=1,
-                 alpha=1.0, kl_clip=None, eta=1.0):
-        """ K-FAC Preconditionner for Linear and Conv2d layers.
+class KFACOptimizer(optim.Optimizer):
+    def __init__(self, net, eps, lr=0.25, momentum=0, sua=False, pi=False,
+                 update_freq=1, alpha=1.0, kl_clip=None, eta=1.0):
+        """ K-FAC Optimizer for Linear and Conv2d layers.
 
         Computes the K-FAC of the second moment of the gradients.
         It works for Linear and Conv2d layers and silently skip other layers.
 
         Args:
-            net (torch.nn.Module): Network to precondition.
+            net (torch.nn.Module): Network to optimize.
             eps (float): Tikhonov regularization parameter for the inverses.
+            lf (float): learning rate.
+            momemtum (float): momemtum factor.
             sua (bool): Applies SUA approximation.
             pi (bool): Computes pi correction for Tikhonov regularization.
             update_freq (int): Perform inverses every update_freq updates.
             alpha (float): Running average parameter (if == 1, no r. ave.).
-            kl_clip (float or torch.Tensor): Scale the gradients by the
-        squared fisher norm.
+            kl_clip (float): Scale the gradients by the squared fisher norm.
+            eta (float): upper bound for gradient scaling.
         """
         self.eps = eps
+        self.lr = lr
+        self.momentum = momentum
         self.sua = sua
         self.pi = pi
         self.update_freq = update_freq
@@ -42,10 +45,15 @@ class KFAC(Optimizer):
                     params.append(mod.bias)
                 d = {'params': params, 'mod': mod, 'layer_type': mod_class}
                 self.params.append(d)
-        super(KFAC, self).__init__(self.params, {})
+        super(KFACOptimizer, self).__init__(self.params, {})
+        self.optim = optim.SGD(
+            net.parameters(),
+            lr=self.lr * (1 - self.momentum),
+            momentum=self.momentum
+        )
 
     def step(self, update_stats=True, update_params=True):
-        """Performs one step of preconditioning."""
+        """Preconditions and applies gradients."""
         fisher_norm = 0.
         for group in self.param_groups:
             # Getting parameters
@@ -93,6 +101,7 @@ class KFAC(Optimizer):
                     param.grad.data *= scale
         if update_stats:
             self._iteration_counter += 1
+        self.optim.step()
 
     @contextlib.contextmanager
     def record_stats(self):

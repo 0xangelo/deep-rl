@@ -1,7 +1,6 @@
 import torch, multiprocessing as mp
-from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from proj.utils import logger
-from proj.utils.kfac import KFAC
+from proj.utils.kfac import KFACOptimizer
 from proj.utils.tqdm_util import trange
 from proj.common.models import default_baseline
 from proj.common.env_pool import EnvPool
@@ -10,19 +9,20 @@ from proj.common.log_utils import *
 from proj.algorithms.trpo import line_search
 
 
+DEFAULT_PIKFAC = dict(
+    eps=1e-3, lr=1.0, pi=True, alpha=0.95, kl_clip=1e-3, eta=1.0
+)
+DEFAULT_VFKFAC = dict(
+    eps=1e-3, lr=1.0, pi=True, alpha=0.95, kl_clip=0.01, eta=1.0
+)
+
 def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
           n_envs=mp.cpu_count(), gamma=0.99, gaelam=1.0, val_iters=10,
-          pol_kfac={}, val_kfac={}):
+          pikfac={}, vfkfac={}):
 
     # handling default values
-    pol_kfac = {
-        **dict(eps=1e-3, alpha=0.95, kl_clip=1e-3, pi=True, eta=1.0),
-        **pol_kfac
-    }
-    val_kfac = {
-        **dict(eps=1e-3, alpha=0.95, kl_clip=0.01, pi=True, eta=1.0),
-        **val_kfac
-    }
+    pikfac = {**DEFAULT_PIKFAC, **pikfac}
+    vfkfac = {**DEFAULT_VFKFAC, **vfkfac}
     if baseline is None:
         baseline = default_baseline(policy)
 
@@ -31,10 +31,8 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
     env = env_maker.make()
     policy = policy.pop('class')(env, **policy)
     baseline = baseline.pop('class')(env, **baseline)
-    pol_precd = KFAC(policy, **pol_kfac)
-    pol_optim = torch.optim.SGD(policy.parameters(), lr=1)
-    # val_precd = KFAC(baseline, **val_kfac)
-    # val_optim = torch.optim.SGD(baseline.parameters(), lr=1)
+    pol_optim = KFACOptimizer(policy, **pikfac)
+    # val_optim = KFACOptimizer(baseline, **vfkfac)
     val_optim = torch.optim.Adam(baseline.parameters())
     loss_fn = torch.nn.MSELoss()
 
@@ -53,30 +51,29 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
             )
 
             logger.info("Updating policy using KFAC")
-            with pol_precd.record_stats():
-                all_dists = policy.dists(all_obs)
+            with pol_optim.record_stats():
                 policy.zero_grad()
+                all_dists = policy.dists(all_obs)
                 all_dists.log_prob(all_acts).mean().backward(retain_graph=True)
 
-            pol_optim.zero_grad()
+            policy.zero_grad()
             old_dists = all_dists.detach()
             surr_loss = -torch.mean(
                 all_dists.likelihood_ratios(old_dists, all_acts) * all_advs
             )
             surr_loss.backward()
-            pol_grad = torch.cat(
-                [p.grad.detach().reshape((-1,)) for p in policy.parameters()]
-            )
-            pol_precd.step()
-            descent_step = torch.cat(
-                [p.grad.detach().reshape((-1,)) for p in policy.parameters()]
-            )
-            expected_improvement = pol_grad.dot(descent_step).item()
+            pol_grad = [p.grad.clone() for p in policy.parameters()]
+            pol_optim.step()
+            expected_improvement = sum((
+                (g * p.grad.data)).sum()
+                 for g, p in zip(pol_grad, policy.parameters()
+            )).item()
 
-            kl_clip = pol_precd.kl_clip
+            kl_clip = pol_optim.kl_clip
             @torch.no_grad()
-            def f_barrier(params):
-                vector_to_parameters(params, policy.parameters())
+            def f_barrier(ratio):
+                for p in policy.parameters():
+                    p.data.add_(ratio, p.grad.data)
                 new_dists = policy.dists(all_obs)
                 surr_loss = -torch.mean(
                     new_dists.likelihood_ratios(old_dists, all_acts) * all_advs
@@ -84,14 +81,9 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
                 avg_kl = kl(old_dists, new_dists).mean().item()
                 return surr_loss.item() if avg_kl < kl_clip else float('inf')
 
-            new_params = line_search(
-                f_barrier,
-                parameters_to_vector(policy.parameters()),
-                descent_step,
-                expected_improvement,
-                y0=surr_loss.item()
+            scale = line_search(
+                f_barrier, 1, 1, expected_improvement, y0=surr_loss.item()
             )
-            vector_to_parameters(new_params, policy.parameters())
 
             logger.info("Updating baseline")
             targets = buffer["returns"]
@@ -105,14 +97,13 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
             # for _ in range(val_iters):
             #     with torch.no_grad():
             #         samples = baseline(all_obs) + torch.randn_like(all_advs)*0.5
-            #     with val_precd.record_stats():
+            #     with val_optim.record_stats():
             #         baseline.zero_grad()
             #         loss_fn(baseline(all_obs), samples).backward()
 
-            #     val_optim.zero_grad()
+            #     baseline.zero_grad()
             #     val_loss = loss_fn(baseline(all_obs), targets)
             #     val_loss.backward()
-            #     val_precd.step()
             #     val_optim.step()
 
             logger.info("Logging information")
