@@ -1,9 +1,7 @@
-import sys, gym, torch, numpy as np, multiprocessing as mp, subprocess
-from proj.utils.tqdm_util import tqdm, trange
-from proj.common.observations import obs_to_tensor
-
+import sys, torch, numpy as np, multiprocessing as mp, subprocess
 import tblib.pickling_support
 tblib.pickling_support.install()
+
 
 # ==============================
 # Parallel traj collecting
@@ -169,60 +167,3 @@ class EnvPool(object):
             worker.join()
         self.workers = []
         self.conns = []
-
-
-def parallel_collect_samples(env_pool, policy, num_samples):
-    """
-    Collect trajectories in parallel using a pool of workers. Actions are
-    computed using the provided policy. For each worker, \lfloor num_samples /
-    env_pool.n_workers \rfloor timesteps are sampled. This means that some of
-    the trajectories will not be executed until termination. These partial
-    trajectories will have their last state index recorded in "finishes" with
-    a False flag.
-
-    When starting, it will first check if env_pool.last_obs is set, and if so,
-    it will start from there rather than resetting all environments. This is
-    useful for reusing the same episode.
-
-    :param env_pool: An instance of EnvPool.
-    :param policy: The policy used to select actions.
-    :param num_samples: The approximate total number of samples to collect.
-    :return: A dictionary with all observations, actions, rewards and tuples
-    of last index, finished flag and last observation of each trajectory
-    """
-    offset      = num_samples // env_pool.n_envs
-    num_samples = env_pool.n_envs * offset
-    all_obs  = np.empty((num_samples,) + policy.ob_space.shape, dtype=np.float32)
-    all_acts = np.empty((num_samples,) + policy.ac_space.shape, dtype=np.float32)
-    all_rews = np.empty((num_samples,), dtype=np.float32)
-    finishes = []
-
-    obs = env_pool.reset() if env_pool.last_obs is None else env_pool.last_obs
-    for idx in trange(0, offset, unit="step", leave=False, desc="Sampling"):
-        actions = policy.actions(torch.as_tensor(obs)).numpy()
-        next_obs, rews, dones, _ = env_pool.step(actions)
-        for env in range(env_pool.n_envs):
-            all_obs[env*offset + idx] = obs[env]
-            all_acts[env*offset + idx] = actions[env]
-            all_rews[env*offset + idx] = rews[env]
-            if dones[env]:
-                finishes.append(
-                    (env*offset + idx + 1, True, np.zeros_like(obs[env]))
-                )
-        obs = next_obs
-    env_pool.flush()
-
-    for env, done in filter(lambda x: not x[1], enumerate(dones)):
-        finishes.append(
-            (env*offset + offset, False, obs[env])
-        )
-
-    # Ordered list with information about the ends of each trajectory
-    finishes = tuple(map(list, zip(*sorted(finishes, key=lambda x: x[0]))))
-
-    return dict(
-        observations=all_obs,
-        actions=all_acts,
-        rewards=all_rews,
-        finishes=finishes
-    )

@@ -6,7 +6,7 @@ from torch.optim.optimizer import Optimizer
 class KFAC(Optimizer):
 
     def __init__(self, net, eps, sua=False, pi=False, update_freq=1,
-                 alpha=1.0, constraint_norm=None, eta=1.0):
+                 alpha=1.0, kl_clip=None, eta=1.0):
         """ K-FAC Preconditionner for Linear and Conv2d layers.
 
         Computes the K-FAC of the second moment of the gradients.
@@ -19,7 +19,7 @@ class KFAC(Optimizer):
             pi (bool): Computes pi correction for Tikhonov regularization.
             update_freq (int): Perform inverses every update_freq updates.
             alpha (float): Running average parameter (if == 1, no r. ave.).
-            constraint_norm (float or torch.Tensor): Scale the gradients by the
+            kl_clip (float or torch.Tensor): Scale the gradients by the
         squared fisher norm.
         """
         self.eps = eps
@@ -27,7 +27,7 @@ class KFAC(Optimizer):
         self.pi = pi
         self.update_freq = update_freq
         self.alpha = alpha
-        self.constraint_norm = constraint_norm
+        self.kl_clip = kl_clip
         self.eta = eta
         self.recording = False
         self.params = []
@@ -70,11 +70,11 @@ class KFAC(Optimizer):
                 # Preconditionning
                 gw, gb = self._precond(weight, bias, group, state)
                 # Updating gradients
-                if self.constraint_norm is not None:
+                if self.kl_clip is not None:
                     fisher_norm += (weight.grad * gw).sum()
                 weight.grad.data = gw
                 if bias is not None:
-                    if self.constraint_norm is not None:
+                    if self.kl_clip is not None:
                         fisher_norm += (bias.grad * gb).sum()
                     bias.grad.data = gb
             # Cleaning
@@ -83,10 +83,10 @@ class KFAC(Optimizer):
             if 'gy' in self.state[group['mod']]:
                 del self.state[group['mod']]['gy']
         # Eventually scale the norm of the gradients
-        if update_params and self.constraint_norm is not None:
+        if update_params and self.kl_clip is not None:
             scale = min(
                 self.eta,
-                torch.sqrt(self.constraint_norm / fisher_norm)
+                torch.sqrt(self.kl_clip / fisher_norm)
             )
             for group in self.param_groups:
                 for param in group['params']:

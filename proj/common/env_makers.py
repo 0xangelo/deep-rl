@@ -26,7 +26,6 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 import os, cv2, gym, gym.logger, numpy as np
 from proj.utils import logger
-from proj.common import observations
 from gym import spaces
 from gym.envs.atari.atari_env import AtariEnv
 from collections import deque
@@ -59,21 +58,31 @@ class EnvMaker(object):
                 env = ScaledFloatFrame(env)
             else:
                 env = ScaledFloatFrame(wrap_atari_pg(env))
+        if isinstance(env.observation_space, spaces.Discrete):
+            env = OneHotObs(env)
         return PyTorchEnv(env) if pytorch else env
 
 
 class PyTorchEnv(gym.Wrapper):
-    def __init__(self, env):
-        super().__init__(env)
-        self.obs_to_tensor = observations.obs_to_tensor(env.observation_space)
-
     def step(self, action):
         observation, reward, done, info = self.env.step(action.cpu().numpy())
-        return self.obs_to_tensor(observation), reward, done, info
+        return torch.as_tensor(observation), reward, done, info
 
     def reset(self, **kwargs):
         observation = self.env.reset(**kwargs)
-        return self.obs_to_tensor(observation)
+        return torch.as_tensor(observation)
+
+
+class OneHotObs(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+        self.ob_space_n = self.observation_space.n
+        self.observation_space = spaces.Box(
+            low=0, high=1, shape=(self.ob_space_n,)
+        )
+
+    def observation(self, obs):
+        return (np.arange(self.ob_space_n) == obs).astype(np.float32)
 
 
 # Code below are adopted from OpenAI Baselines:

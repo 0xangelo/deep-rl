@@ -1,12 +1,22 @@
 import gym, torch, random, numpy as np
 import scipy.signal
 from torch.autograd import grad
+from gym.spaces import Discrete, Box
 
 
 def set_global_seeds(seed):
     np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
+
+
+def n_features(space):
+    if isinstance(space, Box):
+        return np.prod(space.shape)
+    elif isinstance(space, Discrete):
+        return space.n # if space.n > 2 else 1
+    else:
+        raise ValueError("{} is not a valid space type".format(str(space)))
 
 
 def discount_cumsum(x, discount):
@@ -56,7 +66,7 @@ def flat_grad(*args, **kwargs):
     return torch.cat([g.reshape((-1,)) for g in grad(*args, **kwargs)])
 
 
-def fisher_vector_product(v, obs, policy, damping=1e-3):
+def fisher_vec_prod(v, obs, policy, damping=1e-3):
     avg_kl = policy.dists(obs).kl_self().mean()
     grad = flat_grad(avg_kl, policy.parameters(), create_graph=True)
     fvp = flat_grad(grad.dot(v), policy.parameters()).detach()
@@ -72,17 +82,3 @@ def explained_variance_1d(ypred, y):
         else:
             return 1
     return 1 - torch.var(y - ypred).item() / (vary + 1e-8)
-
-
-class HSeries:
-    def __init__(self, scale):
-        self.scale = scale
-
-    def __call__(self, epoch):
-        return self.scale * 1 / (epoch + 1)
-
-
-class AttrDict(dict):
-    def __init__(self, *args, **kwargs):
-        super(AttrDict, self).__init__(*args, **kwargs)
-        self.__dict__ = self

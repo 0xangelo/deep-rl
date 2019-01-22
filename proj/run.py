@@ -108,7 +108,7 @@ def parse_and_execute_grid_search(cmd, args):
 
 if __name__ == '__main__':
     cmd = sys.argv[1]
-    valid_algos = ['vanilla', 'trpo', 'ppo', 'acktr', 'acktr2']
+    valid_algos = ['vanilla', 'trpo', 'a2c', 'ppo', 'acktr']
     valid_utils = ['plot', 'sim_policy']
     valid_cmds = valid_algos + valid_utils
     assert cmd in valid_cmds, \

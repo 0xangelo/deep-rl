@@ -1,5 +1,7 @@
 import sys, os, os.path as osp, string, subprocess, random
 import base64, numpy as np, cloudpickle, zlib
+from subprocess import CalledProcessError
+from textwrap import dedent
 from proj.utils.json_util import convert_json
 
 DIV_LINE_WIDTH = 80
