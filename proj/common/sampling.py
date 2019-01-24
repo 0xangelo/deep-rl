@@ -2,6 +2,7 @@ import torch, numpy as np
 from proj.utils.tqdm_util import trange
 from proj.common.utils import discount_cumsum
 
+@torch.no_grad()
 def parallel_collect_samples(env_pool, policy, num_samples):
     """
     Collect trajectories in parallel using a pool of workers. Actions are

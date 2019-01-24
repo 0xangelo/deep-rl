@@ -24,7 +24,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 
-import os, cv2, gym, gym.logger, numpy as np
+import os, cv2, gym, gym.logger, numpy as np, torch
 from proj.utils import logger
 from gym import spaces
 from gym.envs.atari.atari_env import AtariEnv
@@ -66,11 +66,11 @@ class EnvMaker(object):
 class PyTorchEnv(gym.Wrapper):
     def step(self, action):
         observation, reward, done, info = self.env.step(action.cpu().numpy())
-        return torch.as_tensor(observation), reward, done, info
+        return torch.as_tensor(observation, dtype=torch.float32), reward, done, info
 
     def reset(self, **kwargs):
         observation = self.env.reset(**kwargs)
-        return torch.as_tensor(observation)
+        return torch.as_tensor(observation, dtype=torch.float32)
 
 
 class OneHotObs(gym.ObservationWrapper):
