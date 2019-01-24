@@ -1,3 +1,20 @@
+"""
+MIT License
+
+Copyright (c) 2018 Thomas George, César Laurent and Université de Montréal.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+Adapted from: https://github.com/Thrandis/EKFAC-pytorch
+"""
 import contextlib, torch
 import torch.nn.functional as F
 import torch.optim as optim
@@ -31,7 +48,8 @@ class KFACOptimizer(optim.Optimizer):
         self.recording = False
         self.params = []
         self._iteration_counter = 0
-        param_set = set(net.parameters())
+
+        param_set = set()
         for mod in net.modules():
             mod_class = type(mod).__name__
             if mod_class in ['Linear', 'Conv2d']:
@@ -44,56 +62,52 @@ class KFACOptimizer(optim.Optimizer):
                     params.append(mod.bias)
                 d = {'params': params, 'info': info, 'layer_type': mod_class}
                 self.params.append(d)
-                param_set -= set(params)
-        self.params.append({'params': list(param_set)})
+                param_set.update(set(params))
+
+        param_list = [p for p in net.parameters() if p not in param_set]
+        self.params.append({'params': param_list})
         super(KFACOptimizer, self).__init__(self.params, {})
 
-    def step(self, update_stats=True, update_params=True):
+    def step(self):
         """Preconditions and applies gradients."""
         fisher_norm = 0.
         for group in self.param_groups:
+            params = group['params']
             if 'layer_type' not in group:
+                fisher_norm += sum((p.grad * p.grad).sum() for p in params)
                 continue
+
             # Getting parameters
-            if len(group['params']) == 2:
-                weight, bias = group['params']
-            else:
-                weight = group['params'][0]
-                bias = None
+            weight, bias = params if len(params) == 2 else (params[0], None)
             state = self.state[weight]
+
             # Update convariances and inverses
-            if update_stats:
-                if self._iteration_counter % self.update_freq == 0:
-                    self._compute_covs(group, state)
-                    ixxt, iggt = self._inv_covs(state['xxt'], state['ggt'],
-                                                state['num_locations'])
-                    state['ixxt'] = ixxt
-                    state['iggt'] = iggt
-                else:
-                    if self.alpha != 1:
-                        self._compute_covs(group, state)
-            if update_params:
-                # Preconditionning
-                gw, gb = self._precond(weight, bias, group, state)
-                # Updating gradients
-                fisher_norm += (weight.grad * gw).sum()
-                weight.grad.data = gw
-                if bias is not None:
-                    fisher_norm += (bias.grad * gb).sum()
-                    bias.grad.data = gb
+            self._compute_covs(group, state)
+            if self._iteration_counter % self.update_freq == 0:
+                ixxt, iggt = self._inv_covs(state['xxt'], state['ggt'],
+                                            state['num_locations'])
+                state.update((('ixxt', ixxt), ('iggt', iggt)))
+
+            # Preconditionning
+            gw, gb = self._precond(weight, bias, group, state)
+            # Updating gradients
+            fisher_norm += (weight.grad * gw).sum()
+            weight.grad.data = gw
+            if bias is not None:
+                fisher_norm += (bias.grad * gb).sum()
+                bias.grad.data = gb
+
             # Cleaning
             self.state[weight].pop('x', None)
             self.state[weight].pop('gy', None)
-        # Eventually scale the norm of the gradients
-        if update_params:
-            scale = min(self.eta, torch.sqrt(self.kl_clip / fisher_norm))
-            for group in self.param_groups:
-                for param in group['params']:
-                    if 'layer_type' in group:
-                        param.grad.data *= scale
-                    param.data.sub_(param.grad.data)
-        if update_stats:
-            self._iteration_counter += 1
+
+        # Eventually scale the norm of the gradients and apply each
+        scale = min(self.eta, torch.sqrt(self.kl_clip / fisher_norm))
+        for group in self.param_groups:
+            for param in group['params']:
+                param.grad.data *= scale
+                param.data.sub_(param.grad.data)
+        self._iteration_counter += 1
 
     @contextlib.contextmanager
     def record_stats(self):
