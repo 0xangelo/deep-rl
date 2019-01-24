@@ -36,9 +36,9 @@ def a2c(env_maker, policy, vf=None, k=20, n_envs=mp.cpu_count(),
     # Algorith main loop
     with EnvPool(env_maker, n_envs=n_envs) as env_pool:
         if vf is None:
-            compute_dists_vals = policy.dists_values
+            compute_dists_vals = policy
         else:
-            compute_dists_vals = lambda obs: policy.dists(obs), vf(obs)
+            compute_dists_vals = lambda obs: policy(obs), vf(obs)
         gen = samples_generator(env_pool, policy, k, compute_dists_vals)
 
         logger.info("Starting epoch {}".format(epoch))

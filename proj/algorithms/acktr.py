@@ -48,7 +48,7 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
             logger.info("Computing natural gradient using KFAC")
             with pol_optim.record_stats():
                 policy.zero_grad()
-                all_dists = policy.dists(all_obs)
+                all_dists = policy(all_obs)
                 all_logp = all_dists.log_prob(all_acts)
                 all_logp.mean().backward(retain_graph=True)
 
@@ -69,7 +69,7 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
             def f_barrier(scale):
                 for p in policy.parameters():
                     p.data.add_(scale, p.grad.data)
-                new_dists = policy.dists(all_obs)
+                new_dists = policy(all_obs)
                 for p in policy.parameters():
                     p.data.sub_(scale, p.grad.data)
                 new_logp = new_dists.log_prob(all_acts)

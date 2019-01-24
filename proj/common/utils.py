@@ -1,22 +1,13 @@
-import gym, torch, random, numpy as np
+import torch, random, numpy as np
 import scipy.signal
 from torch.autograd import grad
-from gym.spaces import Discrete, Box
+from torch.distributions.kl import kl_divergence
 
 
 def set_global_seeds(seed):
     np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
-
-
-def n_features(space):
-    if isinstance(space, Box):
-        return np.prod(space.shape)
-    elif isinstance(space, Discrete):
-        return space.n # if space.n > 2 else 1
-    else:
-        raise ValueError("{} is not a valid space type".format(str(space)))
 
 
 def discount_cumsum(x, discount):
@@ -86,7 +77,8 @@ def flat_grad(*args, **kwargs):
 
 
 def fisher_vec_prod(v, obs, policy, damping=1e-3):
-    avg_kl = policy.dists(obs).kl_self().mean()
+    dists = policy(obs)
+    avg_kl = kl_divergence(dists.detach(), dists).mean()
     grad = flat_grad(avg_kl, policy.parameters(), create_graph=True)
     fvp = flat_grad(grad.dot(v), policy.parameters()).detach()
     return fvp + v * damping

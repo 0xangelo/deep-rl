@@ -1,7 +1,6 @@
-import math, torch, torch.nn as nn
+import math, torch, torch.nn as nn, numpy as np, gym.spaces as spaces
 from abc import ABC, abstractmethod
 from proj.common import distributions
-from proj.common.utils import n_features
 
 
 # ==============================
@@ -11,22 +10,21 @@ from proj.common.utils import n_features
 class Model(nn.Module):
     def __init__(self, env, **kwargs):
         super().__init__()
-        self.ob_space = env.observation_space
-        self.in_features = n_features(self.ob_space)
+        self.ob_space = space = env.observation_space
+        if isinstance(space, spaces.Box):
+            n_features = np.prod(space.shape)
+        elif isinstance(space, spaces.Discrete):
+            n_features = space.n # if space.n > 2 else 1
+        else:
+            raise ValueError("{} is not a valid space type".format(str(space)))
+        self.in_features = n_features
 
 
 class FeedForwardModel(ABC):
-    @abstractmethod
-    def build_hidden_net(self):
-        pass
+    out_features = None
 
     @abstractmethod
-    def compute_features(self, obs):
-        pass
-
-    @staticmethod
-    @abstractmethod
-    def initialize(module):
+    def forward(self, obs):
         pass
 
 
@@ -49,51 +47,50 @@ class MlpModel(Model, FeedForwardModel):
         self.activation = activation
         self.hidden_sizes = hidden_sizes
 
-    def build_hidden_net(self):
-        assert not hasattr(self, 'hidden_net'), \
-            "Can only call 'build_hidden_net' once."
-        layers, in_sizes = [], [self.in_features] + self.hidden_sizes
+        layers, in_sizes = [], [self.in_features] + hidden_sizes
         for in_features, out_features in zip(in_sizes[:-1], in_sizes[1:]):
             layers.append(nn.Linear(in_features, out_features))
-            layers.append(self.activation())
-
+            layers.append(activation())
         self.hidden_net = nn.Sequential(*layers)
         self.out_features = in_sizes[-1]
 
-    def compute_features(self, obs):
-        return self.hidden_net(obs)
+        def initialize(module):
+            if isinstance(module, nn.Linear):
+                nn.init.orthogonal_(module.weight, gain=math.sqrt(2))
+                nn.init.constant_(module.bias, 0)
+        self.hidden_net.apply(initialize)
 
-    @staticmethod
-    def initialize(module):
-        if isinstance(module, nn.Linear):
-            nn.init.orthogonal_(module.weight, gain=math.sqrt(2))
-            nn.init.constant_(module.bias, 0)
+    def forward(self, obs):
+        return self.hidden_net(obs)
 
 
 class CNNModel(Model, FeedForwardModel):
     def __init__(self, env, **kwargs):
         super().__init__(env, **kwargs)
         self.in_channels = self.ob_space.shape[-1]
-
-    def build_hidden_net(self):
         self.conv1 = nn.Conv2d(self.in_channels, 16, 8, stride=4)
         self.conv2 = nn.Conv2d(16, 32, 4, stride=2)
         self.fc = nn.Linear(2592, 256)
         self.out_features = 256
 
-    def compute_features(self, obs):
+        def initialize(*modules):
+            for module in modules:
+                if isinstance(module, nn.Conv2d):
+                    nn.init.orthogonal_(module.weight, gain=math.sqrt(2))
+                    nn.init.constant_(module.bias, 0)
+                elif isinstance(module, nn.Linear):
+                    nn.init.orthogonal_(module.weight, gain=1.0)
+                    nn.init.constant_(module.bias, 0)
+        initialize(self.conv1, self.conv2, self.fc)
+
+    def forward(self, obs):
         obs = obs.transpose(1, 2)
         obs = obs.transpose(1, 3)
-        h1 = nn.functional.relu(self.conv1(obs))
-        h2 = nn.functional.relu(self.conv2(h1))
-        h3 = nn.functional.relu(self.fc(h3))
+        relu = nn.ReLU()
+        h1 = relu(self.conv1(obs))
+        h2 = relu(self.conv2(h1))
+        h3 = relu(self.fc(h2.view(len(obs), -1)))
         return h3
-
-    @staticmethod
-    def initialize(module):
-        if isinstance(module, (nn.Linear, nn.Conv2d)):
-            nn.init.orthogonal_(module.weight, gain=math.sqrt(2))
-            nn.init.constant_(module.bias, 0)
 
 
 # ==============================
@@ -101,25 +98,10 @@ class CNNModel(Model, FeedForwardModel):
 # ==============================
 
 class Policy(ABC):
-    def __init__(self, env, **kwargs):
-        super().__init__(env, **kwargs)
-        self.ac_space = env.action_space
+    ac_space = None
 
     @abstractmethod
     def forward(self, obs):
-        """
-        Given some observations, returns the parameters
-        for the action distributions.
-
-        Args:
-        obs (Tensor): A batch of observations
-
-        return (Tensor): distribution parameters
-        """
-        pass
-
-    @abstractmethod
-    def dists(self, obs):
         """
         Given a batch of observations, return a batch of corresponding
         action distributions.
@@ -131,7 +113,6 @@ class Policy(ABC):
         """
         pass
 
-    @torch.no_grad()
     def actions(self, obs):
         """
         Given a batch of observations, return a batch of actions,
@@ -142,30 +123,17 @@ class Policy(ABC):
 
         return (Tensor): A batch of actions
         """
-        return self.dists(obs).sample()
-
-    def action(self, ob):
-        """
-        Single observation version of Policy.actions,
-        with batch dimension removed.
-        """
-        return self.actions(ob.unsqueeze(0))[0]
+        return self(obs).sample()
 
 
-class FeedForwardPolicy(Policy, FeedForwardModel):
+class FeedForwardPolicy(FeedForwardModel, Policy):
     def __init__(self, env, **kwargs):
         super().__init__(env, **kwargs)
-        self.build_hidden_net()
-        self.apply(self.initialize)
-
+        self.ac_space = env.action_space
         self.pdtype = distributions.pdtype(self.ac_space, self.out_features)
 
     def forward(self, obs):
-        feats = self.compute_features(obs)
-        return self.pdtype(feats)
-
-    def dists(self, obs):
-        return self.pdtype.from_flat(self(obs))
+        return self.pdtype(super().forward(obs))
 
 
 class MlpPolicy(FeedForwardPolicy, MlpModel):
@@ -194,28 +162,39 @@ class Baseline(ABC):
         pass
 
 
-class ZeroBaseline(Baseline, Model):
+class ZeroBaseline(Model, Baseline):
     def forward(self, obs):
         return torch.zeros(len(obs))
 
 
-class FeedForwardBaseline(Baseline, FeedForwardModel):
+class FeedForwardBaseline(FeedForwardModel, Baseline):
     def __init__(self, env, **kwargs):
+        # For input, we will concatenate the observation with the time, so we
+        # need to increment the observation dimension
+        ob_space = env.observation_space
+        if isinstance(ob_space, spaces.Box) and len(ob_space.shape) == 1:
+            self.concat_time = True
+            # Use environment to send new ob_space to superclass
+            env.observation_space = spaces.Box(
+                low=np.append(ob_space.low, 0),
+                high=np.append(ob_space.high, 2 ** 32),
+            )
+            self.timestep_limit = env.spec.timestep_limit
         super().__init__(env, **kwargs)
-        self.timestep_limit = env.spec.timestep_limit
-        self.in_features += 1
-        self.build_hidden_net()
-        self.apply(self.initialize)
+        # Restore original ob_space if changed
+        env.observation_space = ob_space
 
         self.val_layer = nn.Linear(self.out_features, 1)
         nn.init.orthogonal_(self.val_layer.weight, gain=0.01)
 
     def forward(self, obs):
-        # Append relative timestep to observation to properly identify state
-        ts = torch.arange(len(obs), dtype=torch.get_default_dtype()) \
-                                         / self.timestep_limit
-        h = self.compute_features(torch.cat((obs, ts[:, None]), dim=-1))
-        return torch.squeeze(self.val_layer(h))
+        if self.concat_time:
+            # Append relative timestep to observation to properly identify state
+            ts = torch.arange(len(obs), dtype=torch.get_default_dtype()) \
+                                               / self.timestep_limit
+            obs = torch.cat((obs, ts[:, None]), dim=-1)
+        feats = super().forward(obs)
+        return torch.squeeze(self.val_layer(feats))
 
 
 class MlpBaseline(FeedForwardBaseline, MlpModel):
@@ -244,8 +223,10 @@ def default_baseline(policy):
 # ==============================
 
 class WeightSharingAC(ABC):
+    ac_space = None
+
     @abstractmethod
-    def dists_values(self, obs):
+    def forward(self, obs):
         """
         Given some observations, compute the corresponding
         action distributions and state values.
@@ -257,23 +238,35 @@ class WeightSharingAC(ABC):
         """
         pass
 
+    def actions(self, obs):
+        """
+        Given a batch of observations, return a batch of actions,
+        each sampled from the corresponding action distributions.
 
-class FeedForwardWeightSharingAC(WeightSharingAC, FeedForwardPolicy):
+        Args:
+        obs (Tensor): A batch of observations
+
+        return (Tensor): A batch of actions
+        """
+        return self(obs)[0].sample()
+
+
+class FeedForwardWeightSharingAC(FeedForwardModel, WeightSharingAC):
     def __init__(self, env, **kwargs):
         super().__init__(env, **kwargs)
+        self.ac_space = env.action_space
+        self.pdtype = distributions.pdtype(self.ac_space, self.out_features)
         self.val_layer = nn.Linear(self.out_features, 1)
         nn.init.orthogonal_(self.val_layer.weight, gain=0.01)
 
-    def dists_values(self, obs):
-        feats = self.compute_features(obs)
-        dists = self.pdtype.from_flat(self.pdtype(feats))
-        values = torch.squeeze(self.val_layer(feats))
-        return dists, values
+    def forward(self, obs):
+        feats = super().forward(obs)
+        return self.pdtype(feats), self.val_layer(feats).squeeze()
 
 
-class MlpWeightSharingAC(FeedForwardWeightSharingAC, MlpPolicy):
+class MlpWeightSharingAC(FeedForwardWeightSharingAC, MlpModel):
     pass
 
 
-class CNNWeightSharingAC(FeedForwardWeightSharingAC, CNNPolicy):
+class CNNWeightSharingAC(FeedForwardWeightSharingAC, CNNModel):
     pass

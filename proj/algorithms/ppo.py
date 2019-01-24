@@ -40,13 +40,13 @@ def ppo(env_maker, policy, baseline=None,  steps=int(1e6), batch=2000,
 
             logger.info("Minimizing surrogate loss")
             with torch.no_grad():
-                old_dists = policy.dists(all_obs)
+                old_dists = policy(all_obs)
             old_logp = old_dists.log_prob(all_acts)
             dataset = TensorDataset(all_obs, all_acts, all_advs, old_logp)
             dataloader = DataLoader(dataset, batch_size=batch, shuffle=True)
             for itr in range(pol_iters):
                 for obs, acts, advs, logp in dataloader:
-                    ratios = (policy.dists(obs).log_prob(acts) - logp).exp()
+                    ratios = (policy(obs).log_prob(acts) - logp).exp()
                     min_advs = torch.where(
                         advs > 0,
                         (1 + clip_ratio) * advs,
@@ -57,8 +57,7 @@ def ppo(env_maker, policy, baseline=None,  steps=int(1e6), batch=2000,
                     pol_optim.step()
 
                 with torch.no_grad():
-                    new_dists = policy.dists(all_obs)
-                    mean_kl = kl(old_dists, new_dists).mean()
+                    mean_kl = kl(old_dists, policy(all_obs)).mean()
                 if mean_kl > 1.5 * target_kl:
                     logger.info("Stopped at step {} due to reaching max kl".
                                 format(itr+1))
@@ -77,7 +76,7 @@ def ppo(env_maker, policy, baseline=None,  steps=int(1e6), batch=2000,
             log_reward_statistics(env)
             log_baseline_statistics(buffer)
             log_action_distribution_statistics(old_dists)
-            logger.logkv('MeanKL', kl(old_dists, new_dists).mean().item())
+            logger.logkv('MeanKL', mean_kl)
             logger.dumpkvs()
 
             logger.info("Saving snapshot")

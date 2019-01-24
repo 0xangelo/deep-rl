@@ -68,4 +68,4 @@ def log_action_distribution_statistics(dists):
 
 @torch.no_grad()
 def log_average_kl_divergence(old_dists, policy, obs):
-    logger.logkv('MeanKL', kl(old_dists, policy.dists(obs)).mean().item())
+    logger.logkv('MeanKL', kl(old_dists, policy(obs)).mean().item())

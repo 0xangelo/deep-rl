@@ -47,7 +47,7 @@ def trpo(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
                 subsamp_obs = all_obs
 
             logger.info("Computing policy gradient")
-            all_dists = policy.dists(all_obs)
+            all_dists = policy(all_obs)
             all_logp = all_dists.log_prob(all_acts)
             old_dists = all_dists.detach()
             old_logp = old_dists.log_prob(all_acts)
@@ -69,7 +69,7 @@ def trpo(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
 
                 def f_barrier(params):
                     vector_to_parameters(params, policy.parameters())
-                    new_dists = policy.dists(all_obs)
+                    new_dists = policy(all_obs)
                     new_logp = new_dists.log_prob(all_acts)
                     surr_loss = -((new_logp - old_logp).exp() * all_advs).mean()
                     avg_kl = kl(old_dists, new_dists).mean().item()

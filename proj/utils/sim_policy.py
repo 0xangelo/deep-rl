@@ -31,7 +31,7 @@ def main(path, index, runs, norender):
         ob = env.reset()
         done = False
         while not done:
-            action = policy.action(ob)
+            action = policy.actions(ob)
             ob, rew, done, _ = env.step(action)
             if not norender: env.render()
 

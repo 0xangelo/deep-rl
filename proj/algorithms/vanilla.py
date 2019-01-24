@@ -39,7 +39,7 @@ def vanilla(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
             )
 
             logger.info("Applying policy gradient")
-            all_dists = policy.dists(all_obs)
+            all_dists = policy(all_obs)
             old_dists = all_dists.detach()
             J0 = torch.mean(all_dists.log_prob(all_acts) * all_advs)
             pol_optim.zero_grad()
