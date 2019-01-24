@@ -4,8 +4,8 @@ import torch.optim as optim
 
 
 class KFACOptimizer(optim.Optimizer):
-    def __init__(self, net, eps, momentum=0, sua=False, pi=False,
-                 update_freq=1, alpha=1.0, kl_clip=1e-3, eta=1.0):
+    def __init__(self, net, eps, sua=False, pi=False, update_freq=1,
+                 alpha=1.0, kl_clip=1e-3, eta=1.0):
         """ K-FAC Optimizer for Linear and Conv2d layers.
 
         Computes the K-FAC of the second moment of the gradients.
@@ -14,7 +14,6 @@ class KFACOptimizer(optim.Optimizer):
         Args:
             net (torch.nn.Module): Network to optimize.
             eps (float): Tikhonov regularization parameter for the inverses.
-            momemtum (float): momemtum factor.
             sua (bool): Applies SUA approximation.
             pi (bool): Computes pi correction for Tikhonov regularization.
             update_freq (int): Perform inverses every update_freq updates.
@@ -23,7 +22,6 @@ class KFACOptimizer(optim.Optimizer):
             eta (float): upper bound for gradient scaling.
         """
         self.eps = eps
-        self.momentum = momentum
         self.sua = sua
         self.pi = pi
         self.update_freq = update_freq
@@ -33,27 +31,29 @@ class KFACOptimizer(optim.Optimizer):
         self.recording = False
         self.params = []
         self._iteration_counter = 0
+        param_set = set(net.parameters())
         for mod in net.modules():
-            mod_class = mod.__class__.__name__
+            mod_class = type(mod).__name__
             if mod_class in ['Linear', 'Conv2d']:
                 mod.register_forward_pre_hook(self._save_input)
                 mod.register_backward_hook(self._save_grad_output)
+                info = (mod.kernel_size, mod.padding, mod.stride) \
+                       if mod_class == 'Conv2d' else None
                 params = [mod.weight]
                 if mod.bias is not None:
                     params.append(mod.bias)
-                d = {'params': params, 'mod': mod, 'layer_type': mod_class}
+                d = {'params': params, 'info': info, 'layer_type': mod_class}
                 self.params.append(d)
+                param_set -= set(params)
+        self.params.append({'params': list(param_set)})
         super(KFACOptimizer, self).__init__(self.params, {})
-        self.optim = optim.SGD(
-            net.parameters(),
-            lr=1.0 * (1 - self.momentum),
-            momentum=self.momentum
-        )
 
     def step(self, update_stats=True, update_params=True):
         """Preconditions and applies gradients."""
         fisher_norm = 0.
         for group in self.param_groups:
+            if 'layer_type' not in group:
+                continue
             # Getting parameters
             if len(group['params']) == 2:
                 weight, bias = group['params']
@@ -82,19 +82,18 @@ class KFACOptimizer(optim.Optimizer):
                     fisher_norm += (bias.grad * gb).sum()
                     bias.grad.data = gb
             # Cleaning
-            if 'x' in self.state[group['mod']]:
-                del self.state[group['mod']]['x']
-            if 'gy' in self.state[group['mod']]:
-                del self.state[group['mod']]['gy']
+            self.state[weight].pop('x', None)
+            self.state[weight].pop('gy', None)
         # Eventually scale the norm of the gradients
         if update_params:
             scale = min(self.eta, torch.sqrt(self.kl_clip / fisher_norm))
             for group in self.param_groups:
                 for param in group['params']:
-                    param.grad.data *= scale
+                    if 'layer_type' in group:
+                        param.grad.data *= scale
+                    param.data.sub_(param.grad.data)
         if update_stats:
             self._iteration_counter += 1
-        self.optim.step()
 
     @contextlib.contextmanager
     def record_stats(self):
@@ -109,12 +108,12 @@ class KFACOptimizer(optim.Optimizer):
     def _save_input(self, mod, i):
         """Saves input of layer to compute covariance."""
         if self.recording:
-            self.state[mod]['x'] = i[0]
+            self.state[mod.weight]['x'] = i[0]
 
     def _save_grad_output(self, mod, grad_input, grad_output):
         """Saves grad on output of layer to compute covariance."""
         if self.recording:
-            self.state[mod]['gy'] = grad_output[0] * grad_output[0].size(0)
+            self.state[mod.weight]['gy'] = grad_output[0]*grad_output[0].size(0)
 
     def _precond(self, weight, bias, group, state):
         """Applies preconditioning."""
@@ -163,20 +162,20 @@ class KFACOptimizer(optim.Optimizer):
 
     def _compute_covs(self, group, state):
         """Computes the covariances."""
-        mod = group['mod']
-        x = self.state[mod]['x']
-        gy = self.state[mod]['gy']
+        weight = group['params'][0]
+        x = self.state[weight]['x']
+        gy = self.state[weight]['gy']
         # Computation of xxt
         if group['layer_type'] == 'Conv2d':
             if not self.sua:
-                x = F.unfold(x, mod.kernel_size, padding=mod.padding,
-                             stride=mod.stride)
+                kernel_size, padding, stride = group['info']
+                x = F.unfold(x, kernel_size, padding=padding, stride=stride)
             else:
                 x = x.view(x.shape[0], x.shape[1], -1)
             x = x.data.permute(1, 0, 2).contiguous().view(x.shape[1], -1)
         else:
             x = x.data.t()
-        if mod.bias is not None:
+        if len(group['params']) == 2:
             ones = torch.ones_like(x[:1])
             x = torch.cat([x, ones], dim=0)
         if self._iteration_counter == 0:

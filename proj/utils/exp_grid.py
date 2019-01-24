@@ -66,7 +66,7 @@ def create_experiment(exp_name, thunk, seed=random.randint(0,2**32),
     return thunk_plus
 
 
-class ExperimentGrid:
+class ExperimentGrid(object):
     """
     Tool for running many experiments given hyperparameter ranges.
     """
