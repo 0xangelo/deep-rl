@@ -1,4 +1,4 @@
-import numpy as np, multiprocessing as mp
+import numpy as np, multiprocessing as mp, gym
 
 
 # ==============================
@@ -22,7 +22,11 @@ def env_worker(env_maker, conn, n_envs):
                     results.append((next_ob, rew, done, info))
                 conn.send(results)
             elif command == 'flush':
-                for env in envs: env._flush(True)
+                for env in envs:
+                    while not isinstance(env, gym.wrappers.Monitor):
+                        env = env.env
+                    env._flush(True)
+                conn.send(None)
             elif command == 'close':
                 conn.close()
                 break
@@ -95,6 +99,7 @@ class EnvPool(object):
     def flush(self):
         for conn in self.conns:
             conn.send(('flush', None))
+        [conn.recv() for conn in self.conns]
 
     def step(self, actions):
         assert len(actions) == self.n_envs
