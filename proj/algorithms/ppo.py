@@ -41,22 +41,21 @@ def ppo(env_maker, policy, baseline=None,  steps=int(1e6), batch=2000,
             logger.info("Minimizing surrogate loss")
             with torch.no_grad():
                 old_dists = policy.dists(all_obs)
-            all_pars = old_dists.flat_params
-            dataset = TensorDataset(all_obs, all_acts, all_advs, all_pars)
-            dataloader = DataLoader(dataset, batch_size=512, shuffle=True)
+            old_logp = old_dists.log_prob(all_acts)
+            dataset = TensorDataset(all_obs, all_acts, all_advs, old_logp)
+            dataloader = DataLoader(dataset, batch_size=batch, shuffle=True)
             for itr in range(pol_iters):
-                for obs, acts, advs, pars in dataloader:
-                    piold = policy.pdtype.from_flat(pars)
-                    pinew = policy.dists(obs)
-                    ratio = pinew.likelihood_ratios(piold, acts)
+                for obs, acts, advs, logp in dataloader:
+                    ratios = (policy.dists(obs).log_prob(acts) - logp).exp()
                     min_advs = torch.where(
                         advs > 0,
                         (1 + clip_ratio) * advs,
                         (1 - clip_ratio) * advs
                     )
                     pol_optim.zero_grad()
-                    torch.mean(- torch.min(ratio * advs, min_advs)).backward()
+                    (-torch.min(ratios * advs, min_advs)).mean().backward()
                     pol_optim.step()
+
                 with torch.no_grad():
                     new_dists = policy.dists(all_obs)
                     mean_kl = kl(old_dists, new_dists).mean()

@@ -72,7 +72,7 @@ class CategoricalPDType(DistributionType):
 
     @property
     def param_shape(self):
-        return (self.size,)
+        return (self.n_cat,)
 
     @property
     def sample_shape(self):
@@ -88,10 +88,6 @@ class CategoricalPDType(DistributionType):
 
 class Distribution(ABC, dists.Distribution):
     @abstractmethod
-    def likelihood_ratios(self, other, samples):
-        pass
-
-    @abstractmethod
     def kl_self(self):
         pass
 
@@ -99,6 +95,9 @@ class Distribution(ABC, dists.Distribution):
     @abstractmethod
     def flat_params(self):
         pass
+
+    def likelihood_ratios(self, other, variables):
+        return torch.exp(self.log_prob(variables) - other.log_prob(variables))
 
     def detach(self):
         return type(self)(self.flat_params.detach())
@@ -114,9 +113,6 @@ class DiagNormal(Distribution, dists.Independent):
     @property
     def flat_params(self):
         return torch.cat((self.base_dist.loc, self.base_dist.scale), dim=1)
-
-    def likelihood_ratios(self, other, variables):
-        return torch.exp(self.log_prob(variables) - other.log_prob(variables))
 
     def kl_self(self):
         return dists.kl.kl_divergence(self.detach(), self)
@@ -138,9 +134,6 @@ class Categorical(Distribution, dists.Categorical):
     @property
     def flat_params(self):
         return self.logits
-
-    def likelihood_ratios(self, other, variables):
-        return torch.exp(self.log_prob(variables) - other.log_prob(variables))
 
     def kl_self(self):
         return dists.kl.kl_divergence(self.detach(), self)

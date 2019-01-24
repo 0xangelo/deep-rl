@@ -1,51 +1,37 @@
-import sys, torch, numpy as np, multiprocessing as mp, subprocess
-import tblib.pickling_support
-tblib.pickling_support.install()
+import numpy as np, multiprocessing as mp
 
 
 # ==============================
 # Parallel traj collecting
 # ==============================
 
-def env_worker(env_maker, conn, n_worker_envs):
-    envs = []
-    for _ in range(n_worker_envs):
-        envs.append(env_maker.make())
-    while True:
-        command, data = conn.recv()
-        try:
+def env_worker(env_maker, conn, n_envs):
+    envs = [env_maker.make() for _ in range(n_envs)]
+    try:
+        while True:
+            command, data = conn.recv()
             if command == 'reset':
-                obs = []
-                for env in envs:
-                    obs.append(env.reset())
-                conn.send(('success', obs))
+                conn.send([env.reset() for env in envs])
             elif command == 'seed':
-                seeds = data
-                for env, seed in zip(envs, seeds):
-                    env.seed(seed)
-                conn.send(('success', None))
+                for env, seed in zip(envs, data): env.seed(seed)
             elif command == 'step':
-                actions = data
                 results = []
-                for env, action in zip(envs, actions):
+                for env, action in zip(envs, data):
                     next_ob, rew, done, info = env.step(action)
-                    if done:
-                        next_ob = env.reset()
+                    if done: next_ob = env.reset()
                     results.append((next_ob, rew, done, info))
-                conn.send(('success', results))
+                conn.send(results)
             elif command == 'flush':
-                for env in envs:
-                    env._flush(True)
-                conn.send(('success', None))
+                for env in envs: env._flush(True)
             elif command == 'close':
-                for env in envs:
-                    env.close()
-                conn.send(('success', None))
-                return
+                conn.close()
+                break
             else:
                 raise ValueError("Unrecognized command: {}".format(command))
-        except Exception as e:
-            conn.send(('error', sys.exc_info()))
+    except KeyboardInterrupt:
+        print('EnvPool worker: ')
+    finally:
+        for env in envs: env.close()
 
 
 class EnvPool(object):
@@ -66,8 +52,8 @@ class EnvPool(object):
         self.workers = []
         self.conns = []
         # try to split evenly, but this isn't always possible
-        self.n_worker_envs = [len(d) for d in np.array_split(
-            np.arange(self.n_envs), self.n_parallel)]
+        self.n_worker_envs = [
+            len(d) for d in np.array_split(np.arange(n_envs), n_parallel)]
         self.worker_env_offsets = np.concatenate(
             [[0], np.cumsum(self.n_worker_envs)[:-1]])
         self.last_obs = None
@@ -75,19 +61,12 @@ class EnvPool(object):
     def start(self):
         workers = []
         conns = []
-        for idx in range(self.n_parallel):
+        for n_envs in self.n_worker_envs:
             worker_conn, master_conn = mp.Pipe()
-            worker = mp.Process(target=env_worker, args=(
-                self.env_maker, worker_conn, self.n_worker_envs[idx]))
+            worker = mp.Process(
+                target=env_worker, args=(self.env_maker, worker_conn, n_envs))
+            worker.daemon = True
             worker.start()
-            # pin each worker to a single core
-            if sys.platform == 'linux':
-                subprocess.check_call(
-                    ["taskset", "-p", "-c",
-                        str(idx % mp.cpu_count()), str(worker.pid)],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
             workers.append(worker)
             conns.append(master_conn)
 
@@ -108,11 +87,7 @@ class EnvPool(object):
             conn.send(('reset', None))
         obs = []
         for conn in self.conns:
-            status, data = conn.recv()
-            if status == 'success':
-                obs.extend(data)
-            else:
-                raise data[1].with_traceback(data[2])
+            obs.extend(conn.recv())
         assert len(obs) == self.n_envs
         self.last_obs = obs = np.asarray(obs, dtype=np.float32)
         return obs
@@ -120,38 +95,25 @@ class EnvPool(object):
     def flush(self):
         for conn in self.conns:
             conn.send(('flush', None))
-        for conn in self.conns:
-            status, data = conn.recv()
-            if status != 'success':
-                raise data[1].with_traceback(data[2])
 
     def step(self, actions):
         assert len(actions) == self.n_envs
-        for conn, offset, workers in zip(
+        for conn, offset, n_envs in zip(
                 self.conns, self.worker_env_offsets, self.n_worker_envs):
-            conn.send(('step', actions[offset:offset + workers]))
+            conn.send(('step', actions[offset:offset + n_envs]))
 
         results = []
-
         for conn in self.conns:
-            status, data = conn.recv()
-            if status == 'success':
-                results.extend(data)
-            else:
-                raise data[1].with_traceback(data[2])
-        next_obs, rews, dones, infos = tuple(map(list, zip(*results)))
+            results.extend(conn.recv())
+        next_obs, rews, dones, infos = zip(*results)
         self.last_obs = next_obs = np.asarray(next_obs, dtype=np.float32)
         return next_obs, rews, dones, infos
 
     def seed(self, seeds):
         assert len(seeds) == self.n_envs
-        for conn, offset, workers in zip(
+        for conn, offset, n_envs in zip(
                 self.conns, self.worker_env_offsets, self.n_worker_envs):
-            conn.send(('seed', seeds[offset:offset + workers]))
-        for conn in self.conns:
-            status, data = conn.recv()
-            if status != 'success':
-                raise data[1].with_traceback(data[2])
+            conn.send(('seed', seeds[offset:offset + n_envs]))
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.close()
@@ -159,10 +121,6 @@ class EnvPool(object):
     def close(self):
         for conn in self.conns:
             conn.send(('close', None))
-        for conn in self.conns:
-            status, data = conn.recv()
-            if status != 'success':
-                raise data[1].with_traceback(data[2])
         for worker in self.workers:
             worker.join()
         self.workers = []

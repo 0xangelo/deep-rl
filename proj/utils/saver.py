@@ -1,5 +1,4 @@
 import os, torch, json, cloudpickle.cloudpickle as cpkl
-from proj.utils.json_util import convert_json
 
 # ==============================
 # Saving snapshots

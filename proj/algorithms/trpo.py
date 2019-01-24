@@ -5,34 +5,9 @@ from proj.utils.tqdm_util import trange
 from proj.common.models import default_baseline
 from proj.common.env_pool import EnvPool
 from proj.common.sampling import parallel_collect_samples, compute_pg_vars
-from proj.common.utils import conjugate_gradient, fisher_vec_prod, flat_grad
+from proj.common.utils import conjugate_gradient, fisher_vec_prod, \
+    flat_grad, line_search
 from proj.common.log_utils import *
-
-
-def line_search(f, x0, dx, expected_improvement, y0=None, accept_ratio=0.1,
-                backtrack_ratio=0.8, max_backtracks=15, atol=1e-7):
-
-    if y0 is None:
-        y0 = f(x0)
-
-    if expected_improvement >= atol:
-        for exp in range(max_backtracks):
-            ratio = backtrack_ratio ** exp
-            x = x0 - ratio * dx
-            y = f(x)
-            actual_improvement = y0 - y
-            # Armijo condition
-            if actual_improvement >= expected_improvement * ratio * accept_ratio:
-                logger.logkv("ExpectedImprovement", expected_improvement * ratio)
-                logger.logkv("ActualImprovement", actual_improvement)
-                logger.logkv("ImprovementRatio", actual_improvement /
-                             (expected_improvement * ratio))
-                return x
-
-    logger.logkv("ExpectedImprovement", expected_improvement)
-    logger.logkv("ActualImprovement", 0.)
-    logger.logkv("ImprovementRatio", 0.)
-    return x0
 
 
 def trpo(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
@@ -72,11 +47,11 @@ def trpo(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
                 subsamp_obs = all_obs
 
             logger.info("Computing policy gradient")
-            new_dists = policy.dists(all_obs)
-            old_dists = new_dists.detach()
-            surr_loss = -torch.mean(
-                new_dists.likelihood_ratios(old_dists, all_acts) * all_advs
-            )
+            all_dists = policy.dists(all_obs)
+            all_logp = all_dists.log_prob(all_acts)
+            old_dists = all_dists.detach()
+            old_logp = old_dists.log_prob(all_acts)
+            surr_loss = -((all_logp - old_logp).exp() * all_advs).mean()
             pol_grad = flat_grad(surr_loss, policy.parameters())
 
             logger.info("Computing truncated natural gradient")
@@ -92,24 +67,25 @@ def trpo(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
                 logger.info("Performing line search")
                 expected_improvement = pol_grad.dot(descent_step).item()
 
-                @torch.no_grad()
                 def f_barrier(params):
                     vector_to_parameters(params, policy.parameters())
                     new_dists = policy.dists(all_obs)
-                    surr_loss = -torch.mean(
-                        new_dists.likelihood_ratios(old_dists, all_acts) \
-                        * all_advs
-                    )
+                    new_logp = new_dists.log_prob(all_acts)
+                    surr_loss = -((new_logp - old_logp).exp() * all_advs).mean()
                     avg_kl = kl(old_dists, new_dists).mean().item()
                     return surr_loss.item() if avg_kl < delta else float('inf')
 
-                new_params = line_search(
+                new_params, expected_improvement, improvement = line_search(
                     f_barrier,
                     parameters_to_vector(policy.parameters()),
                     descent_step,
                     expected_improvement,
                     y0=surr_loss.item()
                 )
+                logger.logkv("ExpectedImprovement", expected_improvement)
+                logger.logkv("ActualImprovement", improvement)
+                logger.logkv("ImprovementRatio", improvement /
+                             expected_improvement)
             else:
                 new_params = parameters_to_vector(policy.parameters()) \
                              - descent_step

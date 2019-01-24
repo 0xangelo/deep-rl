@@ -4,8 +4,8 @@ import torch.optim as optim
 
 
 class KFACOptimizer(optim.Optimizer):
-    def __init__(self, net, eps, lr=0.25, momentum=0, sua=False, pi=False,
-                 update_freq=1, alpha=1.0, kl_clip=None, eta=1.0):
+    def __init__(self, net, eps, momentum=0, sua=False, pi=False,
+                 update_freq=1, alpha=1.0, kl_clip=1e-3, eta=1.0):
         """ K-FAC Optimizer for Linear and Conv2d layers.
 
         Computes the K-FAC of the second moment of the gradients.
@@ -14,7 +14,6 @@ class KFACOptimizer(optim.Optimizer):
         Args:
             net (torch.nn.Module): Network to optimize.
             eps (float): Tikhonov regularization parameter for the inverses.
-            lf (float): learning rate.
             momemtum (float): momemtum factor.
             sua (bool): Applies SUA approximation.
             pi (bool): Computes pi correction for Tikhonov regularization.
@@ -24,7 +23,6 @@ class KFACOptimizer(optim.Optimizer):
             eta (float): upper bound for gradient scaling.
         """
         self.eps = eps
-        self.lr = lr
         self.momentum = momentum
         self.sua = sua
         self.pi = pi
@@ -48,7 +46,7 @@ class KFACOptimizer(optim.Optimizer):
         super(KFACOptimizer, self).__init__(self.params, {})
         self.optim = optim.SGD(
             net.parameters(),
-            lr=self.lr * (1 - self.momentum),
+            lr=1.0 * (1 - self.momentum),
             momentum=self.momentum
         )
 
@@ -78,12 +76,10 @@ class KFACOptimizer(optim.Optimizer):
                 # Preconditionning
                 gw, gb = self._precond(weight, bias, group, state)
                 # Updating gradients
-                if self.kl_clip is not None:
-                    fisher_norm += (weight.grad * gw).sum()
+                fisher_norm += (weight.grad * gw).sum()
                 weight.grad.data = gw
                 if bias is not None:
-                    if self.kl_clip is not None:
-                        fisher_norm += (bias.grad * gb).sum()
+                    fisher_norm += (bias.grad * gb).sum()
                     bias.grad.data = gb
             # Cleaning
             if 'x' in self.state[group['mod']]:
@@ -91,11 +87,8 @@ class KFACOptimizer(optim.Optimizer):
             if 'gy' in self.state[group['mod']]:
                 del self.state[group['mod']]['gy']
         # Eventually scale the norm of the gradients
-        if update_params and self.kl_clip is not None:
-            scale = min(
-                self.eta,
-                torch.sqrt(self.kl_clip / fisher_norm)
-            )
+        if update_params:
+            scale = min(self.eta, torch.sqrt(self.kl_clip / fisher_norm))
             for group in self.param_groups:
                 for param in group['params']:
                     param.grad.data *= scale

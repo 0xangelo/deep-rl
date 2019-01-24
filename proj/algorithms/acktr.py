@@ -5,19 +5,15 @@ from proj.utils.tqdm_util import trange
 from proj.common.models import default_baseline
 from proj.common.env_pool import EnvPool
 from proj.common.sampling import parallel_collect_samples, compute_pg_vars
+from proj.common.utils import line_search
 from proj.common.log_utils import *
-from proj.algorithms.trpo import line_search
 
 
-DEFAULT_PIKFAC = dict(
-    eps=1e-3, lr=1.0, pi=True, alpha=0.95, kl_clip=1e-3, eta=1.0
-)
-DEFAULT_VFKFAC = dict(
-    eps=1e-3, lr=1.0, pi=True, alpha=0.95, kl_clip=0.01, eta=1.0
-)
+DEFAULT_PIKFAC = dict(eps=1e-3, pi=True, alpha=0.95, kl_clip=1e-2, eta=1.0)
+DEFAULT_VFKFAC = dict(eps=1e-3, pi=True, alpha=0.95, kl_clip=1e-2, eta=1.0)
 
 def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
-          n_envs=mp.cpu_count(), gamma=0.99, gaelam=1.0, val_iters=10,
+          n_envs=mp.cpu_count(), gamma=0.99, gaelam=0.97, val_iters=10,
           pikfac={}, vfkfac={}):
 
     # handling default values
@@ -32,8 +28,7 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
     policy = policy.pop('class')(env, **policy)
     baseline = baseline.pop('class')(env, **baseline)
     pol_optim = KFACOptimizer(policy, **pikfac)
-    # val_optim = KFACOptimizer(baseline, **vfkfac)
-    val_optim = torch.optim.Adam(baseline.parameters())
+    val_optim = KFACOptimizer(baseline, **vfkfac)
     loss_fn = torch.nn.MSELoss()
 
     # Algorithm main loop
@@ -50,61 +45,61 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
                 buffer, policy, baseline, gamma, gaelam
             )
 
-            logger.info("Updating policy using KFAC")
+            logger.info("Computing natural gradient using KFAC")
             with pol_optim.record_stats():
                 policy.zero_grad()
                 all_dists = policy.dists(all_obs)
-                all_dists.log_prob(all_acts).mean().backward(retain_graph=True)
+                all_logp = all_dists.log_prob(all_acts)
+                all_logp.mean().backward(retain_graph=True)
 
             policy.zero_grad()
-            old_dists = all_dists.detach()
-            surr_loss = -torch.mean(
-                all_dists.likelihood_ratios(old_dists, all_acts) * all_advs
-            )
+            old_dists, old_logp = all_dists.detach(), all_logp.detach()
+            surr_loss = -((all_logp - old_logp).exp() * all_advs).mean()
             surr_loss.backward()
             pol_grad = [p.grad.clone() for p in policy.parameters()]
             pol_optim.step()
             expected_improvement = sum((
-                (g * p.grad.data)).sum()
-                 for g, p in zip(pol_grad, policy.parameters()
+                (g * p.grad.data).sum()
+                for g, p in zip(pol_grad, policy.parameters())
             )).item()
+            del pol_grad, all_dists, all_logp
 
+            logger.info("Performing line search")
             kl_clip = pol_optim.kl_clip
-            @torch.no_grad()
-            def f_barrier(ratio):
+            def f_barrier(scale):
                 for p in policy.parameters():
-                    p.data.add_(ratio, p.grad.data)
+                    p.data.add_(scale, p.grad.data)
                 new_dists = policy.dists(all_obs)
-                surr_loss = -torch.mean(
-                    new_dists.likelihood_ratios(old_dists, all_acts) * all_advs
-                )
+                for p in policy.parameters():
+                    p.data.sub_(scale, p.grad.data)
+                new_logp = new_dists.log_prob(all_acts)
+                surr_loss = -((new_logp - old_logp).exp() * all_advs).mean()
                 avg_kl = kl(old_dists, new_dists).mean().item()
                 return surr_loss.item() if avg_kl < kl_clip else float('inf')
 
-            scale = line_search(
+            scale, expected_improvement, improvement = line_search(
                 f_barrier, 1, 1, expected_improvement, y0=surr_loss.item()
             )
+            logger.logkv("ExpectedImprovement", expected_improvement)
+            logger.logkv("ActualImprovement", improvement)
+            logger.logkv("ImprovementRatio", improvement / expected_improvement)
+            for p in policy.parameters():
+                p.data.add_(scale, p.grad.data)
 
             logger.info("Updating baseline")
             targets = buffer["returns"]
-            for _ in range(80):
-                val_optim.zero_grad()
-                val_loss = loss_fn(baseline(all_obs), targets)
+            for _ in range(val_iters):
+                with val_optim.record_stats():
+                    baseline.zero_grad()
+                    values = baseline(all_obs)
+                    noise = values.detach() + torch.randn_like(values) * 0.5
+                    loss_fn(values, noise).backward(retain_graph=True)
+
+                baseline.zero_grad()
+                val_loss = loss_fn(values, targets)
                 val_loss.backward()
                 val_optim.step()
-
-            # targets = buffer["returns"]
-            # for _ in range(val_iters):
-            #     with torch.no_grad():
-            #         samples = baseline(all_obs) + torch.randn_like(all_advs)*0.5
-            #     with val_optim.record_stats():
-            #         baseline.zero_grad()
-            #         loss_fn(baseline(all_obs), samples).backward()
-
-            #     baseline.zero_grad()
-            #     val_loss = loss_fn(baseline(all_obs), targets)
-            #     val_loss.backward()
-            #     val_optim.step()
+            del values, noise
 
             logger.info("Logging information")
             logger.logkv('ValueLoss', val_loss.item())
@@ -126,5 +121,3 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
                     val_optim=val_optim.state_dict(),
                 )
             )
-
-            del all_obs, all_acts, all_advs, all_dists, targets, buffer# , samples

@@ -62,6 +62,25 @@ def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
     return x
 
 
+@torch.no_grad()
+def line_search(f, x0, dx, expected_improvement, y0=None, accept_ratio=0.1,
+                backtrack_ratio=0.8, max_backtracks=15, atol=1e-7):
+    if y0 is None:
+        y0 = f(x0)
+
+    if expected_improvement >= atol:
+        for exp in range(max_backtracks):
+            ratio = backtrack_ratio ** exp
+            x = x0 - ratio * dx
+            y = f(x)
+            improvement = y0 - y
+            # Armijo condition
+            if improvement / (expected_improvement * ratio) >= accept_ratio:
+                return x, expected_improvement * ratio, improvement
+
+    return x0, expected_improvement, 0
+
+
 def flat_grad(*args, **kwargs):
     return torch.cat([g.reshape((-1,)) for g in grad(*args, **kwargs)])
 
