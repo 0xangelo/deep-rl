@@ -1,3 +1,5 @@
+# Inspired by OpenAI baselines:
+# https://github.com/openai/baselines/blob/master/baselines/common/distributions.py
 import torch, torch.nn as nn, torch.distributions as dists
 from abc import ABC, abstractmethod
 
@@ -40,7 +42,7 @@ class DiagNormalPDType(DistributionType):
     def __init__(self, size, in_features):
         super().__init__()
         self.size = size
-        self.logstd = nn.Parameter(torch.zeros(1, size))
+        self.logstd = nn.Parameter(torch.zeros(size))
         self.mu = nn.Linear(in_features, size)
         nn.init.orthogonal_(self.mu.weight, gain=0.01)
         nn.init.constant_(self.mu.bias, 0)
@@ -60,7 +62,7 @@ class DiagNormalPDType(DistributionType):
     def forward(self, feats):
         mu = self.mu(feats)
         stddev = self.logstd.expand_as(mu).exp()
-        return self.from_flat(torch.cat((mu, stddev), dim=1))
+        return self.from_flat(torch.cat((mu, stddev), dim=-1))
 
 
 class CategoricalPDType(DistributionType):
@@ -110,14 +112,14 @@ class Distribution(ABC, dists.Distribution):
 
 class DiagNormal(Distribution, dists.Independent):
     def __init__(self, flatparam):
-        loc, scale = torch.chunk(flatparam, 2, dim=1)
+        loc, scale = torch.chunk(flatparam, 2, dim=-1)
         base_distribution = dists.Normal(loc=loc, scale=scale)
         reinterpreted_batch_ndims = 1
         super().__init__(base_distribution, reinterpreted_batch_ndims)
 
     @property
     def flat_params(self):
-        return torch.cat((self.base_dist.loc, self.base_dist.scale), dim=1)
+        return torch.cat((self.base_dist.loc, self.base_dist.scale), dim=-1)
 
 
 @dists.kl.register_kl(DiagNormal, DiagNormal)
