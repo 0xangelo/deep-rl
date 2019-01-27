@@ -17,15 +17,15 @@ copies or substantial portions of the Software.
 """
 
 
-import os, cv2, gym, gym.logger, numpy as np, torch
+import os
+import cv2
+import gym
+import numpy as np
+import torch
 from proj.utils import logger
 from gym import spaces
 from gym.envs.atari.atari_env import AtariEnv
 from collections import deque
-
-
-# Silence the log messages
-gym.logger.set_level(gym.logger.ERROR)
 
 
 class EnvMaker(object):
@@ -48,11 +48,8 @@ class EnvMaker(object):
         if isinstance(env.unwrapped, AtariEnv):
             if '-ram-' in self.env_id:
                 assert 'NoFrameskip' not in self.env_id
-                env = ScaledFloatFrame(env)
             else:
-                env = ScaledFloatFrame(wrap_atari_pg(env))
-        if isinstance(env.observation_space, spaces.Discrete):
-            env = OneHotObs(env)
+                env = wrap_atari_pg(env)
         return PyTorchEnv(env) if pytorch else env
 
 
@@ -304,6 +301,11 @@ class FrameStack(gym.Wrapper):
 
 
 class ScaledFloatFrame(gym.ObservationWrapper):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.observation_space = spaces.Box(
+            low=0, high=1, shape=self.observation_space.shape, dtype=np.float32)
+
     def _observation(self, obs):
         # careful! This undoes the memory optimization, use
         # with smaller replay buffers only.

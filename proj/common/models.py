@@ -84,8 +84,8 @@ class CNNModel(Model, FeedForwardModel):
         initialize(self.conv1, self.conv2, self.fc)
 
     def forward(self, obs):
-        obs = obs.transpose(1, 2)
-        obs = obs.transpose(1, 3)
+        obs = obs.transpose(-3, -2)
+        obs = obs.transpose(-3, -1)
         relu = nn.ReLU()
         h1 = relu(self.conv1(obs))
         h2 = relu(self.conv2(h1))
