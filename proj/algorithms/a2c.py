@@ -1,24 +1,27 @@
-import torch, numpy as np, multiprocessing as mp
+import torch
+import numpy as np
 from torch.optim import RMSprop
 from torch.nn.utils import clip_grad_norm_
 from collections import defaultdict
 from proj.utils import logger
 from proj.utils.tqdm_util import trange
-from proj.common.env_pool import EnvPool
+from proj.utils.saver import SnapshotSaver
+from proj.common.env_pool import ShmEnvPool as EnvPool
 from proj.common.sampling import samples_generator
 from proj.common.log_utils import *
 from proj.common.models import WeightSharingAC
 
 
-def a2c(env_maker, policy, vf=None, k=20, n_envs=mp.cpu_count(),
-        gamma=0.99, optimizer={}, max_grad_norm=1.0, ent_coeff=0.01,
-        vf_loss_coeff=0.5, epoch_length=10000, samples=int(8e7)):
+def a2c(env_maker, policy, vf=None, k=20, n_envs=16, gamma=0.99, optimizer={},
+        max_grad_norm=1.0, ent_coeff=0.01, vf_loss_coeff=0.5,
+        epoch_length=10000, samples=int(8e7), **saver_kwargs):
     assert vf is None or not isinstance(policy, WeightSharingAC), \
         "Choose between a weight sharing model or separate policy and baseline"
 
     optimizer = {'class': RMSprop, 'lr': 1e-3, **optimizer}
 
     logger.save_config(locals())
+    saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     env = env_maker()
     policy = policy.pop('class')(env, **policy)
@@ -42,9 +45,9 @@ def a2c(env_maker, policy, vf=None, k=20, n_envs=mp.cpu_count(),
         gen = samples_generator(env_pool, policy, k, compute_dists_vals)
 
         logger.info("Starting epoch {}".format(epoch))
-        for _ in trange(samples // epoch_length, desc="Training", unit="updt"):
+        for _ in trange(samples // epoch_length, desc="Training", unit="epch"):
             for t in trange(global_t, (epoch+1)*epoch_length, k*n_envs,
-                            desc="Epoch", unit="iter", leave=False):
+                            desc="Epoch", unit="updt", leave=False):
                 all_acts, all_rews, all_dones, all_dists, all_vals, next_vals \
                     = next(gen)
 
@@ -86,7 +89,7 @@ def a2c(env_maker, policy, vf=None, k=20, n_envs=mp.cpu_count(),
             )
             logger.dumpkvs()
 
-            logger.save_state(
+            saver.save_state(
                 epoch,
                 dict(
                     alg=dict(last_epoch=epoch),

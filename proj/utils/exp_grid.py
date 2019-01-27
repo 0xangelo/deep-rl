@@ -52,6 +52,7 @@ def create_experiment(exp_name, thunk, seed=random.randint(0,2**32),
 
     def thunk_plus():
         from proj.utils import logger
+        from proj.utils.tqdm_util import tqdm_out
         from proj.common.utils import set_global_seeds
         from proj.common.env_makers import EnvMaker
 
@@ -61,7 +62,7 @@ def create_experiment(exp_name, thunk, seed=random.randint(0,2**32),
             kwargs['env_maker'] = EnvMaker(kwargs['env'])
             del kwargs['env']
 
-        with logger.session(path=log_dir, exp_name=exp_name):
+        with logger.session(path=log_dir, exp_name=exp_name), tqdm_out():
             thunk(**kwargs)
     return thunk_plus
 

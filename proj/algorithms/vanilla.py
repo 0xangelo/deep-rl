@@ -1,6 +1,7 @@
-import torch, multiprocessing as mp
+import torch
 from proj.utils import logger
 from proj.utils.tqdm_util import trange
+from proj.utils.saver import SnapshotSaver
 from proj.common.models import default_baseline
 from proj.common.env_pool import EnvPool
 from proj.common.sampling import parallel_collect_samples, compute_pg_vars
@@ -8,14 +9,15 @@ from proj.common.log_utils import *
 
 
 def vanilla(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
-            n_envs=mp.cpu_count(), gamma=0.99, gaelam=0.97,
-            optimizer={}, val_iters=80, val_lr=1e-3):
+            n_envs=16, gamma=0.99, gaelam=0.97, optimizer={}, val_iters=80,
+            val_lr=1e-3, **saver_kwargs):
 
     optimizer = {'class': torch.optim.Adam, **optimizer}
     if baseline is None:
         baseline = default_baseline(policy)
 
     logger.save_config(locals())
+    saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     env = env_maker()
     policy = policy.pop('class')(env, **policy)
@@ -63,7 +65,7 @@ def vanilla(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
             logger.dumpkvs()
 
             logger.info("Saving snapshot")
-            logger.save_state(
+            saver.save_state(
                 updt+1,
                 dict(
                     alg=dict(last_iter=updt),

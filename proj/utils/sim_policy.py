@@ -1,4 +1,9 @@
-import gym, click, time, numpy as np, pprint
+import gym
+import click
+import time
+import numpy as np
+import torch
+import pprint
 from proj.utils.saver import SnapshotSaver
 
 
@@ -18,12 +23,13 @@ def main(path, index, runs, norender):
     state = None
     while state is None:
         saver = SnapshotSaver(path, latest_only=(index is None))
-        config, state = saver.get_config(), saver.get_state(index)
-        if config is None or state is None:
+        snapshot = saver.get_state(index)
+        if state is None:
             time.sleep(1)
 
+    state, config = snapshot['state'], snapshot['config']
     pprint.pprint(config)
-    env = config['env_maker'](pytorch=True)
+    env = config['env_maker']()
     policy = config['policy'].pop('class')(env, **config['policy'])
     policy.load_state_dict(state['policy'])
 
@@ -31,8 +37,8 @@ def main(path, index, runs, norender):
         ob = env.reset()
         done = False
         while not done:
-            action = policy.actions(ob)
-            ob, rew, done, _ = env.step(action)
+            action = policy.actions(torch.tensor(ob).unsqueeze(0)).squeeze()
+            ob, rew, done, _ = env.step(action.numpy())
             if not norender: env.render()
 
     # keep unwrapping until we get the monitor

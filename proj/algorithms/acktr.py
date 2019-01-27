@@ -1,9 +1,10 @@
-import torch, multiprocessing as mp
+import torch
 from proj.utils import logger
 from proj.utils.kfac import KFACOptimizer
 from proj.utils.tqdm_util import trange
+from proj.utils.saver import SnapshotSaver
 from proj.common.models import default_baseline
-from proj.common.env_pool import EnvPool
+from proj.common.env_pool import ShmEnvPool as EnvPool
 from proj.common.sampling import parallel_collect_samples, compute_pg_vars
 from proj.common.utils import line_search
 from proj.common.log_utils import *
@@ -13,8 +14,8 @@ DEFAULT_PIKFAC = dict(eps=1e-3, pi=True, alpha=0.95, kl_clip=1e-2, eta=1.0)
 DEFAULT_VFKFAC = dict(eps=1e-3, pi=True, alpha=0.95, kl_clip=1e-2, eta=1.0)
 
 def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=4000,
-          n_envs=mp.cpu_count(), gamma=0.99, gaelam=0.96, val_iters=20,
-          pikfac={}, vfkfac={}):
+          n_envs=16, gamma=0.99, gaelam=0.96, val_iters=20, pikfac={},
+          vfkfac={}, **saver_kwargs):
 
     # handling default values
     pikfac = {**DEFAULT_PIKFAC, **pikfac}
@@ -23,6 +24,7 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=4000,
         baseline = default_baseline(policy)
 
     logger.save_config(locals())
+    saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     env = env_maker()
     policy = policy.pop('class')(env, **policy)
@@ -111,7 +113,7 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=4000,
             logger.dumpkvs()
 
             logger.info("Saving snapshot")
-            logger.save_state(
+            saver.save_state(
                 updt+1,
                 dict(
                     alg=dict(last_iter=updt),

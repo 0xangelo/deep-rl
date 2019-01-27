@@ -5,9 +5,10 @@ import os, torch, json, cloudpickle.cloudpickle as cpkl
 # ==============================
 
 class SnapshotSaver(object):
-    def __init__(self, path, interval=10, latest_only=None):
+    def __init__(self, path, config=None, interval=10, latest_only=None):
         self.path = path
         self.interval = interval
+        self.config = config
 
         if latest_only is None:
             latest_only = True
@@ -29,22 +30,10 @@ class SnapshotSaver(object):
             "latest.pkl" if self.latest_only else "%d.pkl" % index
         )
 
-    def get_config_path(self):
-        return os.path.join(self.snapshots_folder, "config.pkl")
-
-    def save_config(self, config):
-        file_path = self.get_config_path()
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, "wb") as f:
-            torch.save(config, f, pickle_module=cpkl, pickle_protocol=-1)
-
-    def get_config(self, device='cpu'):
-        device = torch.device(device)
-        with open(self.get_config_path(), "rb") as f:
-            return torch.load(f, map_location=device)
-
     def save_state(self, index, state):
         if index % self.interval == 0:
+            if self.config is not None:
+                state = {'config': self.config, 'state': state}
             file_path = self.get_snapshot_path(index)
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             with open(file_path, "wb") as f:
