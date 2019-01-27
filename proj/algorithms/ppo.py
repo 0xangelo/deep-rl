@@ -17,7 +17,7 @@ def ppo(env_maker, policy, baseline=None,  steps=int(1e6), batch=2000,
 
     logger.save_config(locals())
 
-    env = env_maker.make()
+    env = env_maker()
     policy = policy.pop('class')(env, **policy)
     baseline = baseline.pop('class')(env, **baseline)
     pol_optim = torch.optim.Adam(policy.parameters(), lr=pol_lr)

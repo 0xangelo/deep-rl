@@ -23,7 +23,7 @@ def main(path, index, runs, norender):
             time.sleep(1)
 
     pprint.pprint(config)
-    env = config['env_maker'].make(pytorch=True)
+    env = config['env_maker'](pytorch=True)
     policy = config['policy'].pop('class')(env, **config['policy'])
     policy.load_state_dict(state['policy'])
 

@@ -20,7 +20,7 @@ def a2c(env_maker, policy, vf=None, k=20, n_envs=mp.cpu_count(),
 
     logger.save_config(locals())
 
-    env = env_maker.make()
+    env = env_maker()
     policy = policy.pop('class')(env, **policy)
     param_list = torch.nn.ParameterList(policy.parameters())
     if vf is not None:
@@ -49,11 +49,10 @@ def a2c(env_maker, policy, vf=None, k=20, n_envs=mp.cpu_count(),
                     = next(gen)
 
                 # Compute returns and advantages
-                all_rets = torch.empty_like(all_rews)
-                all_rets[-1] = (1 - all_dones[-1]) * next_vals
+                all_rets = all_rews.clone()
+                all_rets[-1] += (1 - all_dones[-1]) * next_vals
                 for i in reversed(range(k-1)):
-                    all_rets[i] = all_rews[i] + \
-                                  (1 - all_dones[i]) * gamma * all_rets[i+1]
+                    all_rets[i] += (1 - all_dones[i]) * gamma * all_rets[i+1]
                 all_advs = all_rets - all_vals
 
                 # Compute loss

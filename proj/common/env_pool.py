@@ -1,4 +1,5 @@
-import numpy as np, multiprocessing as mp, gym
+import numpy as np, multiprocessing as mp
+from gym.wrappers import Monitor
 
 
 # ==============================
@@ -6,7 +7,12 @@ import numpy as np, multiprocessing as mp, gym
 # ==============================
 
 def env_worker(env_maker, conn, n_envs):
-    envs = [env_maker.make() for _ in range(n_envs)]
+    envs = [env_maker() for _ in range(n_envs)]
+    flushers = []
+    for env in envs:
+        while not isinstance(env, Monitor):
+            env = env.env
+        flushers.append(env._flush)
     try:
         while True:
             command, data = conn.recv()
@@ -22,10 +28,7 @@ def env_worker(env_maker, conn, n_envs):
                     results.append((next_ob, rew, done, info))
                 conn.send(results)
             elif command == 'flush':
-                for env in envs:
-                    while not isinstance(env, gym.wrappers.Monitor):
-                        env = env.env
-                    env._flush(True)
+                for flusher in flushers: flusher(True)
                 conn.send(None)
             elif command == 'close':
                 conn.close()
@@ -33,7 +36,7 @@ def env_worker(env_maker, conn, n_envs):
             else:
                 raise ValueError("Unrecognized command: {}".format(command))
     except KeyboardInterrupt:
-        print('EnvPool worker: ')
+        print('EnvPool worker: got KeyboardInterrupt')
     finally:
         for env in envs: env.close()
 
@@ -111,8 +114,8 @@ class EnvPool(object):
         for conn in self.conns:
             results.extend(conn.recv())
         next_obs, rews, dones, infos = zip(*results)
-        self.last_obs = next_obs = np.asarray(next_obs, dtype=np.float32)
-        return next_obs, rews, dones, infos
+        self.last_obs = next_obs = np.asarray(next_obs, dtype='f')
+        return next_obs, np.asarray(rews, dtype='f'), np.asarray(dones, dtype='f'), infos
 
     def seed(self, seeds):
         assert len(seeds) == self.n_envs

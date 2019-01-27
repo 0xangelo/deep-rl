@@ -12,8 +12,8 @@ from proj.common.log_utils import *
 DEFAULT_PIKFAC = dict(eps=1e-3, pi=True, alpha=0.95, kl_clip=1e-2, eta=1.0)
 DEFAULT_VFKFAC = dict(eps=1e-3, pi=True, alpha=0.95, kl_clip=1e-2, eta=1.0)
 
-def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
-          n_envs=mp.cpu_count(), gamma=0.99, gaelam=0.97, val_iters=10,
+def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=4000,
+          n_envs=mp.cpu_count(), gamma=0.99, gaelam=0.96, val_iters=20,
           pikfac={}, vfkfac={}):
 
     # handling default values
@@ -24,7 +24,7 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
 
     logger.save_config(locals())
 
-    env = env_maker.make()
+    env = env_maker()
     policy = policy.pop('class')(env, **policy)
     baseline = baseline.pop('class')(env, **baseline)
     pol_optim = KFACOptimizer(policy, **pikfac)

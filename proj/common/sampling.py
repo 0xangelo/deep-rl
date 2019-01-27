@@ -22,41 +22,40 @@ def parallel_collect_samples(env_pool, policy, num_samples):
     :return: A dictionary with all observations, actions, rewards and tuples
     of last index, finished flag and last observation of each trajectory
     """
-    offset      = num_samples // env_pool.n_envs
-    num_samples = env_pool.n_envs * offset
-    all_obs  = np.empty((num_samples,) + policy.ob_space.shape, dtype=np.float32)
-    all_acts = np.empty((num_samples,) + policy.ac_space.shape, dtype=np.float32)
-    all_rews = np.empty((num_samples,), dtype=np.float32)
-    finishes = []
+    n_envs     = env_pool.n_envs
+    steps      = num_samples // n_envs
+    all_obs    = np.empty((steps+1, n_envs) + policy.ob_space.shape, dtype='f')
+    all_acts   = np.empty((steps, n_envs) + policy.ac_space.shape, dtype='f')
+    all_rews   = np.empty((steps, n_envs), dtype='f')
+    all_dones  = np.empty((steps, n_envs), dtype=np.bool)
+    slices     = []
+    last_dones = [0] * n_envs
 
     obs = env_pool.reset() if env_pool.last_obs is None else env_pool.last_obs
-    for idx in trange(offset, unit="step", leave=False, desc="Sampling"):
-        actions = policy.actions(torch.as_tensor(obs)).numpy()
+    for step in trange(steps, unit="step", leave=False, desc="Sampling"):
+        actions = policy.actions(torch.from_numpy(obs)).numpy()
         next_obs, rews, dones, _ = env_pool.step(actions)
-        for env in range(env_pool.n_envs):
-            all_obs[env*offset + idx] = obs[env]
-            all_acts[env*offset + idx] = actions[env]
-            all_rews[env*offset + idx] = rews[env]
-            if dones[env]:
-                finishes.append(
-                    (env*offset + idx + 1, True, np.zeros_like(obs[env]))
-                )
+        all_obs[step] = obs
+        all_acts[step] = actions
+        all_rews[step] = rews
+        all_dones[step] = dones
+        for env, (last_done, done) in enumerate(zip(last_dones, dones)):
+            if done:
+                slices.append((slice(last_done, step), env))
+                last_dones[env] = step
         obs = next_obs
     env_pool.flush()
 
-    for env, done in filter(lambda x: not x[1], enumerate(dones)):
-        finishes.append(
-            (env*offset + offset, False, obs[env])
-        )
-
-    # Ordered list with information about the ends of each trajectory
-    last_infos = tuple(map(list, zip(*sorted(finishes, key=lambda x: x[0]))))
+    for env, last_done in enumerate(last_dones):
+        slices.append((slice(last_done, None), env))
+    all_obs[-1] = obs
 
     return dict(
         observations=all_obs,
         actions=all_acts,
         rewards=all_rews,
-        last_infos=last_infos
+        dones=all_dones,
+        slices=slices
     )
 
 
@@ -66,26 +65,26 @@ def samples_generator(env_pool, policy, k, compute_dists_vals):
 
     n = env_pool.n_envs
     while True:
-        all_acts = torch.empty((k, n) + policy.pdtype.sample_shape)
+        all_acts  = torch.empty((k, n) + policy.pdtype.sample_shape)
         all_dists = torch.empty((k, n) + policy.pdtype.param_shape)
-        all_rews = np.empty((k, n), dtype=np.float32)
+        all_rews  = np.empty((k, n), dtype=np.float32)
         all_dones = np.empty((k, n), dtype=np.float32)
-        all_vals = torch.empty((k, n))
+        all_vals  = torch.empty((k, n))
 
         for i in range(k):
             with torch.no_grad():
                 acts = dists.sample()
 
             next_obs, rews, dones, _ = env_pool.step(acts.numpy())
-            all_acts[i] = acts
-            all_rews[i] = rews
+            all_acts[i]  = acts
+            all_rews[i]  = rews
             all_dones[i] = dones
             all_dists[i] = dists.flat_params
-            all_vals[i] = vals
+            all_vals[i]  = vals
 
             dists, vals = compute_dists_vals(torch.as_tensor(next_obs))
 
-        all_rews = torch.as_tensor(all_rews)
+        all_rews  = torch.as_tensor(all_rews)
         all_dones = torch.as_tensor(all_dones)
         all_dists = policy.pdtype.from_flat(all_dists.reshape(k*n, -1))
         yield all_acts, all_rews, all_dones, all_dists, all_vals, vals.detach()
@@ -100,37 +99,34 @@ def compute_pg_vars(buffer, policy, baseline, gamma, gaelam):
     """
     Compute variables needed for various policy gradient algorithms
     """
-    observations = buffer["observations"]
+    observations = torch.as_tensor(buffer.pop("observations"))
     actions      = buffer["actions"]
     rewards      = buffer["rewards"]
-    returns      = buffer["returns"] = np.empty_like(rewards)
-    baselines    = buffer["baselines"] = baseline(
-        torch.as_tensor(observations)).numpy()
-    advantages   = buffer["advantages"] = np.empty_like(rewards)
+    dones        = buffer.pop("dones")
+    returns      = buffer["returns"] = rewards.copy()
+    baselines    = buffer["baselines"] = torch.empty(observations.shape[:2])
 
-    times, dones, last_obs = buffer.pop("last_infos")
-    last_vals = baseline(torch.as_tensor(np.stack(last_obs))).numpy()
-    intervals = [slice(*inter) for inter in zip([0] + times[:-1], times)]
+    slices = buffer.pop("slices")
+    for interval in slices:
+        baselines[interval] = baseline(observations[interval])
+    values = baselines.numpy()
+    values[-1, dones[-1]] = 0
+    deltas = rewards + gamma * values[1:] - values[:-1]
+    returns[-1] += gamma * values[-1]
 
-    for inter, done, last_val in zip(intervals, dones, last_vals):
-        # If already finished, the future cumulative rewards starting from
-        # the final state is 0
-        last_val = [0] if done else last_val[np.newaxis]
-        # This is useful when fitting baselines. It uses the baseline prediction
-        # of the last state value to perform Bellman backup if the trajectory is
-        # not finished.
-        extended_rewards  = np.concatenate((rewards[inter], last_val))
-        returns[inter]    = discount_cumsum(extended_rewards, gamma)[:-1]
-        values            = np.concatenate((baselines[inter], last_val))
-        deltas            = rewards[inter] + gamma * values[1:] - values[:-1]
-        advantages[inter] = discount_cumsum(deltas, gamma * gaelam)
+    gaemul = gamma * gaelam
+    for step in reversed(range(len(rewards)-1)):
+        deltas[step]  += (1-dones[step]) * gaemul * deltas[step+1]
+        returns[step] += (1-dones[step]) * gamma * returns[step+1]
 
     # Normalizing the advantage values can make the algorithm more robust to
     # reward scaling
-    buffer["advantages"] = (advantages - advantages.mean()) / advantages.std()
+    buffer["advantages"] = (deltas - deltas.mean()) / deltas.std()
+    buffer["observations"] = observations[:-1]
+    buffer["baselines"] = baselines[:-1]
 
-    # Flattened lists of observations, actions, advantages ...
-    for key, val in buffer.items():
-        buffer[key] = torch.as_tensor(val)
+    batch_size = np.prod(rewards.shape)
+    for k, v in buffer.items():
+        buffer[k] = torch.as_tensor(v).reshape(batch_size, -1).squeeze()
 
     return buffer['observations'], buffer['actions'], buffer['advantages']
