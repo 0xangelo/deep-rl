@@ -8,9 +8,7 @@ def parallel_collect_samples(env_pool, policy, num_samples):
     Collect trajectories in parallel using a pool of workers. Actions are
     computed using the provided policy. For each worker, \lfloor num_samples /
     env_pool.n_workers \rfloor timesteps are sampled. This means that some of
-    the trajectories will not be executed until termination. These partial
-    trajectories will have their last state index recorded in "finishes" with
-    a False flag.
+    the trajectories will not be executed until termination.
 
     When starting, it will first check if env_pool.last_obs is set, and if so,
     it will start from there rather than resetting all environments. This is
@@ -22,13 +20,13 @@ def parallel_collect_samples(env_pool, policy, num_samples):
     :return: A dictionary with all observations, actions, rewards and tuples
     of last index, finished flag and last observation of each trajectory
     """
-    n_envs     = env_pool.n_envs
-    steps      = num_samples // n_envs
-    all_obs    = np.empty((steps+1, n_envs) + policy.ob_space.shape, dtype='f')
-    all_acts   = np.empty((steps, n_envs) + policy.ac_space.shape, dtype='f')
-    all_rews   = np.empty((steps, n_envs), dtype='f')
-    all_dones  = np.empty((steps, n_envs), dtype=np.bool)
-    slices     = []
+    n_envs = env_pool.n_envs
+    steps = num_samples // n_envs
+    all_obs = np.empty((steps+1, n_envs) + policy.ob_space.shape, dtype='f')
+    all_acts = np.empty((steps, n_envs) + policy.ac_space.shape, dtype='f')
+    all_rews = np.empty((steps, n_envs), dtype='f')
+    all_dones = np.empty((steps, n_envs), dtype=np.bool)
+    slices = []
     last_dones = [0] * n_envs
 
     obs = env_pool.reset() if env_pool.last_obs is None else env_pool.last_obs
@@ -65,26 +63,26 @@ def samples_generator(env_pool, policy, k, compute_dists_vals):
 
     n = env_pool.n_envs
     while True:
-        all_acts  = torch.empty((k, n) + policy.pdtype.sample_shape)
+        all_acts = torch.empty((k, n) + policy.pdtype.sample_shape)
         all_dists = torch.empty((k, n) + policy.pdtype.param_shape)
-        all_rews  = np.empty((k, n), dtype=np.float32)
+        all_rews = np.empty((k, n), dtype=np.float32)
         all_dones = np.empty((k, n), dtype=np.float32)
-        all_vals  = torch.empty((k, n))
+        all_vals = torch.empty((k, n))
 
         for i in range(k):
             with torch.no_grad():
                 acts = dists.sample()
 
             next_obs, rews, dones, _ = env_pool.step(acts.numpy())
-            all_acts[i]  = acts
-            all_rews[i]  = rews
+            all_acts[i] = acts
+            all_rews[i] = rews
             all_dones[i] = dones
             all_dists[i] = dists.flat_params
-            all_vals[i]  = vals
+            all_vals[i] = vals
 
             dists, vals = compute_dists_vals(torch.as_tensor(next_obs))
 
-        all_rews  = torch.as_tensor(all_rews)
+        all_rews = torch.as_tensor(all_rews)
         all_dones = torch.as_tensor(all_dones)
         all_dists = policy.pdtype.from_flat(all_dists.reshape(k*n, -1))
         yield all_acts, all_rews, all_dones, all_dists, all_vals, vals.detach()
@@ -100,28 +98,28 @@ def compute_pg_vars(buffer, policy, baseline, gamma, gaelam):
     Compute variables needed for various policy gradient algorithms
     """
     observations = torch.as_tensor(buffer.pop("observations"))
-    actions      = buffer["actions"]
-    rewards      = buffer["rewards"]
-    dones        = buffer.pop("dones")
-    returns      = buffer["returns"] = rewards.copy()
-    baselines    = buffer["baselines"] = torch.empty(observations.shape[:2])
+    actions = buffer["actions"]
+    rewards = buffer["rewards"]
+    dones = buffer.pop("dones")
+    returns = rewards.copy()
+    baselines = torch.empty(observations.shape[:2])
 
     slices = buffer.pop("slices")
     for interval in slices:
         baselines[interval] = baseline(observations[interval])
     values = baselines.numpy()
     values[-1, dones[-1]] = 0
-    deltas = rewards + gamma * values[1:] - values[:-1]
+    deltas = rewards + gamma*values[1:] - values[:-1]
     returns[-1] += gamma * values[-1]
 
     gaemul = gamma * gaelam
     for step in reversed(range(len(rewards)-1)):
-        deltas[step]  += (1-dones[step]) * gaemul * deltas[step+1]
+        deltas[step] += (1-dones[step]) * gaemul * deltas[step+1]
         returns[step] += (1-dones[step]) * gamma * returns[step+1]
 
     # Normalizing the advantage values can make the algorithm more robust to
     # reward scaling
-    buffer["advantages"] = (deltas - deltas.mean()) / deltas.std()
+    buffer["advantages"] = (deltas-deltas.mean()) / deltas.std()
     buffer["observations"] = observations[:-1]
     buffer["baselines"] = baselines[:-1]
 
