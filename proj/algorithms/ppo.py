@@ -62,7 +62,7 @@ def ppo(env_maker, policy, baseline=None,  steps=int(1e6), batch=2000,
                     pol_optim.step()
 
                 with torch.no_grad():
-                    mean_kl = kl(old_dists, policy(all_obs)).mean()
+                    mean_kl = kl(old_dists, policy(all_obs)).mean().item()
                 if mean_kl > 1.5 * target_kl:
                     logger.info("Stopped at step {} due to reaching max kl".
                                 format(itr+1))

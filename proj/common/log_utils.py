@@ -56,9 +56,10 @@ def log_reward_statistics(env):
         logger.logkv('TotalNEpisodes', len(episode_rewards))
 
 
+@torch.no_grad()
 def log_baseline_statistics(buffer):
-    baselines = buffer['baselines']
-    returns = buffer['returns']
+    baselines, returns = buffer['baselines'], buffer['returns']
+    logger.logkv('ValueLoss', torch.nn.MSELoss()(baselines, returns).item())
     logger.logkv('ExplainedVariance', explained_variance_1d(baselines, returns))
 
 

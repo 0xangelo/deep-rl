@@ -107,7 +107,6 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=4000,
             del values, noise
 
             logger.info("Logging information")
-            logger.logkv('ValueLoss', val_loss.item())
             logger.logkv('TotalNSamples', (updt+1) * (batch - (batch % n_envs)))
             log_reward_statistics(env)
             log_baseline_statistics(buffer)

@@ -67,8 +67,8 @@ def a2c(env_maker, policy, vf=None, k=20, n_envs=16, gamma=0.99, optimizer={},
                     param_list.parameters(), max_grad_norm)
                 optimizer.step()
 
-                logger.logkv_mean('|VfPred|', abs(all_vals.mean().item()))
-                logger.logkv_mean('|VfTarget|', abs(all_rets.mean().item()))
+                logger.logkv_mean('|VfPred|', all_vals.abs().mean().item())
+                logger.logkv_mean('|VfTarget|', all_rets.abs().mean().item())
                 logger.logkv_mean('VfLoss', vf_loss.item())
                 log_action_distribution_statistics(all_dists)
 
