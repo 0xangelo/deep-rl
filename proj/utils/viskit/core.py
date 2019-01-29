@@ -24,8 +24,8 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
 
-import csv
 import itertools
+import pandas
 import json
 import os
 
@@ -46,33 +46,18 @@ def flatten(l):
     return [item for sublist in l for item in sublist]
 
 
-def load_progress(progress_json_path, verbose=True):
+def load_progress(progress_path, verbose=True):
     if verbose:
-        print("Reading %s" % progress_json_path)
-    entries = dict()
-    rows = []
-    with open(progress_json_path, 'r') as f:
-        lines = f.read().split('\n')
-        for line in lines:
-            if len(line) > 0:
-                row = json.loads(line)
-                rows.append(row)
-    all_keys = set(k for row in rows for k in row.keys())
-    for k in all_keys:
-        if k not in entries:
-            entries[k] = []
-        for row in rows:
-            if k in row:
-                v = row[k]
-                try:
-                    entries[k].append(float(v))
-                except:
-                    entries[k].append(np.nan)
-            else:
-                entries[k].append(np.nan)
+        print("Reading %s" % progress_path)
 
-    entries = dict([(k, np.array(v)) for k, v in entries.items()])
-    return entries
+    if progress_path.endswith('.csv'):
+        return pandas.read_csv(progress_path, index_col=None, comment='#')
+
+    ds = []
+    with open(progress_path, 'rt') as fh:
+        for line in fh:
+            ds.append(json.loads(line))
+    return pandas.DataFrame(ds)
 
 
 def flatten_dict(d):
@@ -124,11 +109,17 @@ def load_exps_data(exp_folder_paths, ignore_missing_keys=False, verbose=True):
         try:
             exp_path = exp
             variant_json_path = os.path.join(exp_path, "variant.json")
+            progress_csv_path = os.path.join(exp_path, "progress.csv")
             progress_json_path = os.path.join(exp_path, "progress.json")
-            progress = load_progress(progress_json_path, verbose=verbose)
-            try:
+            if os.path.exists(progress_csv_path):
+                progress = load_progress(progress_csv_path, verbose=verbose)
+            elif os.path.exists(progress_json_path):
+                progress = load_progress(progress_json_path, verbose=verbose)
+            else:
+                continue
+            if os.path.exists(variant_json_path):
                 params = load_params(variant_json_path)
-            except IOError:
+            else:
                 params = dict(exp_name="experiment")
             exps_data.append(AttrDict(
                 progress=progress,

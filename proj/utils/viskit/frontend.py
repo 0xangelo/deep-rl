@@ -146,7 +146,6 @@ def make_plot(plot_list, title=None, xtitle=None, ytitle=None):
         margin=go.layout.Margin(
             t=35,
             b=40,
-            l=50,
             r=30,
         ),
         xaxis=go.layout.XAxis(
@@ -411,6 +410,7 @@ def is_increasing_key(key, exps_data):
 
 
 def is_increasing(arr):
+    arr = np.asarray(arr)
     return np.all(arr[1:] - arr[:-1] >= 0) and np.max(arr) > np.min(arr)
 
 

@@ -20,12 +20,11 @@ import os
 import os.path as osp
 import string
 import subprocess
-import random
 import base64
-import numpy as np
 import cloudpickle
 import zlib
 import json
+import time
 from collections import OrderedDict
 from subprocess import CalledProcessError
 from textwrap import dedent
@@ -62,8 +61,8 @@ def valid_str(v):
     return str_v
 
 
-def create_experiment(exp_name, thunk, seed=random.randint(0, 2**32),
-                      log_dir=None, format_strs=None, datestamp=None, **kwargs):
+def create_experiment(exp_name, thunk, seed=42, log_dir=None, format_strs=None,
+                      datestamp=None, **kwargs):
     # Make base path
     ymd_time = time.strftime("%Y-%m-%d_") if datestamp else ''
     relpath = ''.join([ymd_time, exp_name])
@@ -141,7 +140,9 @@ class ExperimentGrid(object):
         # is the total number of experiments that will run; the number not
         # counting seeds is the total number of otherwise-unique configs
         # being investigated.
-        nvars_total = int(np.prod([len(v) for v in self.vals]))
+        nvars_total = 1
+        for v in self.vals:
+            nvars_total *= len(v)
         if 'seed' in self.keys:
             num_seeds = len(self.vals[self.keys.index('seed')])
             nvars_seedless = int(nvars_total / num_seeds)
