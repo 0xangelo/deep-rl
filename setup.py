@@ -4,7 +4,7 @@ setup(name='proj',
       packages=[package for package in find_packages()
                 if package.startswith('proj')],
       install_requires=[
-          'gym[atari,box2d,classic_control]',
+          'gym',
           'numpy',
           'tqdm',
           'flask',
