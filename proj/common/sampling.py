@@ -1,4 +1,5 @@
-import torch, numpy as np
+import torch
+import numpy as np
 from proj.utils.tqdm_util import trange
 from proj.common.utils import discount_cumsum
 
@@ -22,9 +23,11 @@ def parallel_collect_samples(env_pool, policy, num_samples):
     """
     n_envs = env_pool.n_envs
     steps = num_samples // n_envs
-    all_obs = np.empty((steps+1, n_envs) + policy.ob_space.shape, dtype='f')
-    all_acts = np.empty((steps, n_envs) + policy.ac_space.shape, dtype='f')
-    all_rews = np.empty((steps, n_envs), dtype='f')
+    all_obs = np.empty(
+        (steps+1, n_envs) + policy.ob_space.shape, policy.ob_space.dtype)
+    all_acts = np.empty(
+        (steps, n_envs) + policy.ac_space.shape, policy.ac_space.dtype)
+    all_rews = np.empty((steps, n_envs), dtype=np.float32)
     all_dones = np.empty((steps, n_envs), dtype=np.bool)
     slices = []
     last_dones = [0] * n_envs
@@ -39,7 +42,7 @@ def parallel_collect_samples(env_pool, policy, num_samples):
         all_dones[step] = dones
         for env, (last_done, done) in enumerate(zip(last_dones, dones)):
             if done:
-                slices.append((slice(last_done, step), env))
+                slices.append((slice(last_done, step+1), env))
                 last_dones[env] = step
         obs = next_obs
     env_pool.flush()
@@ -82,11 +85,10 @@ def samples_generator(env_pool, policy, k, compute_dists_vals):
 
             dists, vals = compute_dists_vals(torch.as_tensor(next_obs))
 
-        all_rews = torch.as_tensor(all_rews)
-        all_dones = torch.as_tensor(all_dones)
+        all_rews = torch.from_numpy(all_rews)
+        all_dones = torch.from_numpy(all_dones)
         all_dists = policy.pdtype.from_flat(all_dists.reshape(k*n, -1))
         yield all_acts, all_rews, all_dones, all_dists, all_vals, vals.detach()
-
 
 # ==============================
 # Variables and estimation
@@ -97,7 +99,7 @@ def compute_pg_vars(buffer, policy, baseline, gamma, gaelam):
     """
     Compute variables needed for various policy gradient algorithms
     """
-    observations = torch.as_tensor(buffer.pop("observations"))
+    observations = torch.from_numpy(buffer.pop("observations"))
     actions = buffer["actions"]
     rewards = buffer["rewards"]
     dones = buffer.pop("dones")
@@ -107,6 +109,7 @@ def compute_pg_vars(buffer, policy, baseline, gamma, gaelam):
     slices = buffer.pop("slices")
     for interval in slices:
         baselines[interval] = baseline(observations[interval])
+    # baselines = baseline(observations)
     values = baselines.numpy()
     values[-1, dones[-1]] = 0
     deltas = rewards + gamma*values[1:] - values[:-1]
@@ -122,6 +125,7 @@ def compute_pg_vars(buffer, policy, baseline, gamma, gaelam):
     buffer["advantages"] = (deltas-deltas.mean()) / deltas.std()
     buffer["observations"] = observations[:-1]
     buffer["baselines"] = baselines[:-1]
+    buffer["returns"] = returns
 
     batch_size = np.prod(rewards.shape)
     for k, v in buffer.items():

@@ -1,6 +1,7 @@
 import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
-from proj.utils import logger
+from torch.distributions.kl import kl_divergence as kl
+from baselines import logger
 from proj.utils.tqdm_util import trange
 from proj.utils.saver import SnapshotSaver
 from proj.common.models import default_baseline
@@ -8,7 +9,9 @@ from proj.common.env_pool import EnvPool
 from proj.common.sampling import parallel_collect_samples, compute_pg_vars
 from proj.common.utils import conjugate_gradient, fisher_vec_prod, \
     flat_grad, line_search
-from proj.common.log_utils import *
+from proj.common.log_utils import save_config, log_reward_statistics, \
+    log_baseline_statistics, log_action_distribution_statistics, \
+    log_average_kl_divergence
 
 
 def trpo(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
@@ -18,7 +21,7 @@ def trpo(env_maker, policy, baseline=None, steps=int(1e6), batch=2000,
     if baseline is None:
         baseline = default_baseline(policy)
 
-    logger.save_config(locals())
+    save_config(locals())
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     env = env_maker()

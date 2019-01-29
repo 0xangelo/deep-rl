@@ -3,15 +3,8 @@ import multiprocessing as mp
 from gym.wrappers import Monitor
 import ctypes
 
-
-_NP_TO_CT = {np.float32: ctypes.c_float,
-             np.int32: ctypes.c_int32,
-             np.int8: ctypes.c_int8,
-             np.uint8: ctypes.c_char,
-             np.bool: ctypes.c_bool}
-
 # ==============================
-# Parallel traj collecting
+# Using mp.Pipe (pickles data)
 # ==============================
 
 def env_worker(env_maker, conn, n_envs):
@@ -101,7 +94,7 @@ class EnvPool(object):
         for conn in self.conns:
             obs.extend(conn.recv())
         assert len(obs) == self.n_envs
-        self.last_obs = np.asarray(obs, dtype='f')
+        self.last_obs = np.stack(obs)
         return self.last_obs
 
     def flush(self):
@@ -120,7 +113,7 @@ class EnvPool(object):
         for conn in self.conns:
             results.extend(conn.recv())
         next_obs, rews, dones, infos = zip(*results)
-        self.last_obs = np.asarray(next_obs, dtype='f')
+        self.last_obs = np.stack(next_obs)
         return self.last_obs, np.asarray(rews), np.asarray(dones), infos
 
     def seed(self, seeds):
@@ -141,10 +134,16 @@ class EnvPool(object):
         self.workers.clear()
         self.conns.clear()
 
+# ==============================
+# Using shared memory
+# ==============================
 
-# ==============================
-# Parallel traj collecting
-# ==============================
+_NP_TO_CT = {np.float32: ctypes.c_float,
+             np.int32: ctypes.c_int32,
+             np.int8: ctypes.c_int8,
+             np.uint8: ctypes.c_char,
+             np.bool: ctypes.c_bool}
+
 
 def shm_worker(env_maker, conn, n_envs, obs_bufs, obs_shape, obs_dtype):
     envs = [env_maker() for _ in range(n_envs)]
@@ -294,4 +293,4 @@ class ShmEnvPool(object):
             np.frombuffer(b.get_obj(), dtype=self.obs_dtype).reshape(
                 self.obs_shape)
             for b in self.obs_bufs]
-        return np.asarray(results, dtype='f')
+        return np.stack(results)

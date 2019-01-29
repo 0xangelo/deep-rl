@@ -1,11 +1,39 @@
-import sys, os, os.path as osp, string, subprocess, random
-import base64, numpy as np, cloudpickle, zlib
+"""
+The MIT License
+
+Copyright (c) 2018 OpenAI (http://openai.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+Adapted from OpenAI's Spinning Up: https://github.com/openai/spinningup
+"""
+import sys
+import os
+import os.path as osp
+import string
+import subprocess
+import random
+import base64
+import numpy as np
+import cloudpickle
+import zlib
+import json
+from collections import OrderedDict
 from subprocess import CalledProcessError
 from textwrap import dedent
 from proj.utils.json_util import convert_json
 
 DIV_LINE_WIDTH = 80
 DEFAULT_SHORTHAND = True
+LOG_FMTS = 'log,json'
 
 
 def all_bools(vals):
@@ -34,8 +62,8 @@ def valid_str(v):
     return str_v
 
 
-def create_experiment(exp_name, thunk, seed=random.randint(0,2**32),
-                      log_dir=None, datestamp=None, **kwargs):
+def create_experiment(exp_name, thunk, seed=random.randint(0, 2**32),
+                      log_dir=None, format_strs=None, datestamp=None, **kwargs):
     # Make base path
     ymd_time = time.strftime("%Y-%m-%d_") if datestamp else ''
     relpath = ''.join([ymd_time, exp_name])
@@ -51,7 +79,7 @@ def create_experiment(exp_name, thunk, seed=random.randint(0,2**32),
     log_dir = osp.join(log_dir, relpath)
 
     def thunk_plus():
-        from proj.utils import logger
+        from baselines import logger
         from proj.utils.tqdm_util import tqdm_out
         from proj.common.utils import set_global_seeds
         from proj.common.env_makers import EnvMaker
@@ -62,8 +90,11 @@ def create_experiment(exp_name, thunk, seed=random.randint(0,2**32),
             kwargs['env_maker'] = EnvMaker(kwargs['env'])
             del kwargs['env']
 
-        with logger.session(path=log_dir, exp_name=exp_name), tqdm_out():
+        with logger.scoped_configure(log_dir, format_strs), tqdm_out():
+            with open(os.path.join(log_dir, 'variant.json'), 'wt') as f:
+                json.dump({'exp_name': exp_name}, f)
             thunk(**kwargs)
+
     return thunk_plus
 
 
@@ -307,7 +338,7 @@ class ExperimentGrid(object):
         new_variants = [unflatten_var(var) for var in flat_variants]
         return new_variants
 
-    def run(self, thunk, log_dir=None, datestamp=False):
+    def run(self, thunk, log_dir=None, format_strs=LOG_FMTS, datestamp=False):
         """
         Run each variant in the grid with function 'thunk'.
 
@@ -330,8 +361,8 @@ class ExperimentGrid(object):
         variants = self.variants()
 
         # Print variant names for the user.
-        var_names = set([self.variant_name(var) for var in variants])
-        var_names = sorted(list(var_names))
+        var_names = OrderedDict.fromkeys(map(self.variant_name, variants))
+        var_names = list(var_names.keys())
         line = '='*DIV_LINE_WIDTH
         preparing = 'Preparing to run the following experiments...'
         joined_var_names = '\n'.join(var_names)
@@ -345,7 +376,8 @@ class ExperimentGrid(object):
             print("Running experiment:", exp_name)
 
             thunk_plus = create_experiment(
-                exp_name, thunk, log_dir=log_dir, datestamp=datestamp, **var
+                exp_name, thunk, log_dir=log_dir, datestamp=datestamp,
+                format_strs=format_strs.split(','), **var
             )
             # Prepare to launch a script to run the experiment
             pickled_thunk = cloudpickle.dumps(thunk_plus)

@@ -1,4 +1,7 @@
-import os, torch, json, cloudpickle.cloudpickle as cpkl
+import os
+import torch
+import copy
+import cloudpickle.cloudpickle as cpkl
 
 # ==============================
 # Saving snapshots
@@ -8,7 +11,7 @@ class SnapshotSaver(object):
     def __init__(self, path, config=None, interval=10, latest_only=None):
         self.path = path
         self.interval = interval
-        self.config = config
+        self.config = copy.deepcopy(config)
 
         if latest_only is None:
             latest_only = True
@@ -32,8 +35,7 @@ class SnapshotSaver(object):
 
     def save_state(self, index, state):
         if index % self.interval == 0:
-            if self.config is not None:
-                state = {'config': self.config, 'state': state}
+            state = (self.config, state)
             file_path = self.get_snapshot_path(index)
             os.makedirs(os.path.dirname(file_path), exist_ok=True)
             with open(file_path, "wb") as f:

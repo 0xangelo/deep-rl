@@ -1,7 +1,20 @@
-import math, torch, torch.nn as nn, numpy as np, gym.spaces as spaces
+import math
+import torch
+import torch.nn as nn
+import numpy as np
+import gym.spaces as spaces
 from abc import ABC, abstractmethod
 from proj.common import distributions
 
+
+def uint8_to_float32(tensor):
+    return tensor.float() / 255.0
+
+
+def one_hot(n_cat):
+    def to_one_hot(tensor):
+        return torch.eye(n_cat)[tensor]
+    return to_one_hot
 
 # ==============================
 # Models
@@ -11,13 +24,22 @@ class Model(nn.Module):
     def __init__(self, env, **kwargs):
         super().__init__()
         self.ob_space = space = env.observation_space
+        self.observation_processing = []
         if isinstance(space, spaces.Box):
             n_features = np.prod(space.shape)
+            if space.dtype.type is np.uint8:
+                self.observation_processing.append(uint8_to_float32)
         elif isinstance(space, spaces.Discrete):
-            n_features = space.n # if space.n > 2 else 1
+            n_features = space.n
+            self.observation_processing.append(one_hot(space.n))
         else:
             raise ValueError("{} is not a valid space type".format(str(space)))
         self.in_features = n_features
+
+    def forward(self, obs):
+        for process in self.observation_processing:
+            obs = process(obs)
+        return obs.float()
 
 
 class FeedForwardModel(ABC):
@@ -61,6 +83,7 @@ class MlpModel(Model, FeedForwardModel):
         self.hidden_net.apply(initialize)
 
     def forward(self, obs):
+        obs = super().forward(obs)
         return self.hidden_net(obs)
 
 
@@ -72,6 +95,7 @@ class CNNModel(Model, FeedForwardModel):
         self.conv2 = nn.Conv2d(16, 32, 4, stride=2)
         self.fc = nn.Linear(2592, 256)
         self.out_features = 256
+        self.activation = nn.ReLU()
 
         def initialize(*modules):
             for module in modules:
@@ -84,14 +108,16 @@ class CNNModel(Model, FeedForwardModel):
         initialize(self.conv1, self.conv2, self.fc)
 
     def forward(self, obs):
-        obs = obs.transpose(-3, -2)
-        obs = obs.transpose(-3, -1)
-        relu = nn.ReLU()
-        h1 = relu(self.conv1(obs))
-        h2 = relu(self.conv2(h1))
-        h3 = relu(self.fc(h2.view(len(obs), -1)))
+        obs = super().forward(obs)
+        # Add a batch dim if necessary and move channels to appropriate pos
+        obs = obs.reshape(-1, *self.ob_space.shape)
+        obs = obs.permute(0, 3, 1, 2)
+        h1 = self.activation(self.conv1(obs))
+        h2 = self.activation(self.conv2(h1))
+        # Remove batch dim for single observations
+        h2 = h2.view(-1, self.fc.in_features).squeeze(0)
+        h3 = self.activation(self.fc(h2))
         return h3
-
 
 # ==============================
 # Policies
@@ -143,7 +169,6 @@ class MlpPolicy(FeedForwardPolicy, MlpModel):
 class CNNPolicy(FeedForwardPolicy, CNNModel):
     pass
 
-
 # ==============================
 # Baselines
 # ==============================
@@ -172,29 +197,34 @@ class FeedForwardBaseline(FeedForwardModel, Baseline):
         # For input, we will concatenate the observation with the time, so we
         # need to increment the observation dimension
         ob_space = env.observation_space
+        self.concat_time = False
+
         if isinstance(ob_space, spaces.Box) and len(ob_space.shape) == 1:
             self.concat_time = True
             # Use environment to send new ob_space to superclass
             env.observation_space = spaces.Box(
                 low=np.append(ob_space.low, 0),
                 high=np.append(ob_space.high, 2 ** 32),
+                dtype=ob_space.dtype
             )
             self.timestep_limit = env.spec.timestep_limit
+
         super().__init__(env, **kwargs)
         # Restore original ob_space if changed
         env.observation_space = ob_space
-
         self.val_layer = nn.Linear(self.out_features, 1)
         nn.init.orthogonal_(self.val_layer.weight, gain=0.01)
 
     def forward(self, obs):
         if self.concat_time:
-            # Append relative timestep to observation to properly identify state
-            ts = torch.arange(len(obs), dtype=torch.get_default_dtype()) \
-                                               / self.timestep_limit
-            obs = torch.cat((obs, ts[:, None]), dim=-1)
+            # Add a batch dim if necessary
+            obs = obs.reshape(-1, self.in_features-1)
+            # Append relative timestep to observation
+            # Remove batch dim for single observations
+            ts = torch.arange(len(obs)).to(obs) / self.timestep_limit
+            obs = torch.cat((obs, ts[:, None]), dim=-1).squeeze(0)
         feats = super().forward(obs)
-        return torch.squeeze(self.val_layer(feats))
+        return self.val_layer(feats).squeeze()
 
 
 class MlpBaseline(FeedForwardBaseline, MlpModel):
@@ -216,7 +246,6 @@ def default_baseline(policy):
         return {'class': CNNBaseline}
     else:
         raise ValueError("Unrecognized policy type")
-
 
 # ==============================
 # Weight sharing models

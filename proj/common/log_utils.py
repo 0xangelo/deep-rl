@@ -1,9 +1,20 @@
-import gym, torch, numpy as np
+import gym
+import json
+import torch
+import os.path
+import numpy as np
+from baselines import logger
 from torch.distributions.kl import kl_divergence as kl
-from proj.utils import logger
+from proj.utils.json_util import convert_json
 from proj.common.utils import explained_variance_1d
 from proj.common.distributions import DiagNormal, Categorical
 
+
+def save_config(config):
+    with open(os.path.join(logger.get_dir(), 'variant.json'), 'r') as f:
+        params = json.load(f)
+    with open(os.path.join(logger.get_dir(), 'variant.json'), 'wt') as f:
+        json.dump({**params, **convert_json(config)}, f)
 
 # ==============================
 # Helper methods for logging
@@ -46,7 +57,6 @@ def log_reward_statistics(env):
 
 
 def log_baseline_statistics(buffer):
-    # Specifically, compute the explained variance, defined as
     baselines = buffer['baselines']
     returns = buffer['returns']
     logger.logkv('ExplainedVariance', explained_variance_1d(baselines, returns))
@@ -54,17 +64,18 @@ def log_baseline_statistics(buffer):
 
 @torch.no_grad()
 def log_action_distribution_statistics(dists):
-    logger.logkv('Entropy', dists.entropy().mean().item())
-    logger.logkv('Perplexity', dists.perplexity().mean().item())
+    logger.logkv_mean('Entropy', dists.entropy().mean().item())
+    logger.logkv_mean('Perplexity', dists.perplexity().mean().item())
     if isinstance(dists, DiagNormal):
-        logger.logkv('AveragePolicyStd', dists.stddev.mean().item())
+        logger.logkv_mean('AveragePolicyStd', dists.stddev.mean().item())
         for idx in range(dists.stddev.shape[-1]):
-            logger.logkv('AveragePolicyStd[{}]'.format(idx),
+            logger.logkv_mean('AveragePolicyStd[{}]'.format(idx),
                           dists.stddev[...,idx].mean().item())
     elif isinstance(dists, Categorical):
         probs = dists.probs.mean(0)
-        for idx in range(probs.numel()):
-            logger.logkv('AveragePolicyProb[{}]'.format(idx), probs[idx].item())
+        for idx, prob in enumerate(probs):
+            logger.logkv_mean('AveragePolicyProb[{}]'.format(idx), prob)
+
 
 @torch.no_grad()
 def log_average_kl_divergence(old_dists, policy, obs):

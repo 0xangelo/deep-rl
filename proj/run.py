@@ -1,4 +1,25 @@
-import sys, os, os.path as osp, subprocess, gym
+"""
+The MIT License
+
+Copyright (c) 2018 OpenAI (http://openai.com)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+Adapted from OpenAI's Spinning Up: https://github.com/openai/spinningup
+"""
+import sys
+import os
+import os.path as osp
+import subprocess
+import gym
 from textwrap import dedent
 import proj.algorithms
 from proj.utils.exp_grid import ExperimentGrid
@@ -7,7 +28,7 @@ from proj.common.models import *
 
 # Command line args that will go to ExperimentGrid.run, and must possess unique
 # values (therefore must be treated separately).
-RUN_KEYS = ['log_dir', 'datestamp']
+RUN_KEYS = ['log_dir', 'format_strs', 'datestamp']
 
 
 def friendly_err(err_msg):
@@ -120,7 +141,8 @@ if __name__ == '__main__':
 
     elif cmd in valid_utils:
         # Execute the correct utility file.
-        if cmd == 'plot': cmd = osp.join('viskit', 'frontend')
+        if cmd == 'plot':
+            cmd = osp.join('viskit', 'frontend')
         runfile = osp.join(
             osp.abspath(osp.dirname(__file__)), 'utils', cmd + '.py'
         )

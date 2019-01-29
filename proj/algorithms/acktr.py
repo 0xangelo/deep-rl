@@ -1,13 +1,16 @@
 import torch
-from proj.utils import logger
+from torch.distributions.kl import kl_divergence as kl
+from baselines import logger
 from proj.utils.kfac import KFACOptimizer
 from proj.utils.tqdm_util import trange
 from proj.utils.saver import SnapshotSaver
 from proj.common.models import default_baseline
-from proj.common.env_pool import ShmEnvPool as EnvPool
+from proj.common.env_pool import EnvPool
 from proj.common.sampling import parallel_collect_samples, compute_pg_vars
 from proj.common.utils import line_search
-from proj.common.log_utils import *
+from proj.common.log_utils import save_config, log_reward_statistics, \
+    log_baseline_statistics, log_action_distribution_statistics, \
+    log_average_kl_divergence
 
 
 DEFAULT_PIKFAC = dict(eps=1e-3, pi=True, alpha=0.95, kl_clip=1e-2, eta=1.0)
@@ -23,7 +26,7 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=4000,
     if baseline is None:
         baseline = default_baseline(policy)
 
-    logger.save_config(locals())
+    save_config(locals())
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     env = env_maker()

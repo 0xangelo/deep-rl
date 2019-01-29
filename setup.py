@@ -6,14 +6,11 @@ setup(name='proj',
       install_requires=[
           'gym[atari,box2d,classic_control]',
           'numpy',
-          'python-dateutil',
-          'tblib',
           'tqdm',
           'flask',
           'plotly',
           'click',
           'cloudpickle',
-          'torch',
-          'opencv-python'
+          'torch'
       ],
 )
