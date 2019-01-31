@@ -32,7 +32,7 @@ from proj.utils.json_util import convert_json
 
 DIV_LINE_WIDTH = 80
 DEFAULT_SHORTHAND = True
-LOG_FMTS = 'log,json'
+LOG_FMTS = 'stdout,csv'
 
 
 def all_bools(vals):
@@ -89,7 +89,7 @@ def create_experiment(exp_name, thunk, seed=42, log_dir=None, format_strs=None,
             kwargs['env_maker'] = EnvMaker(kwargs['env'])
             del kwargs['env']
 
-        with logger.scoped_configure(log_dir, format_strs), tqdm_out():
+        with tqdm_out(), logger.scoped_configure(log_dir, format_strs):
             with open(os.path.join(log_dir, 'variant.json'), 'wt') as f:
                 json.dump({'exp_name': exp_name}, f)
             thunk(**kwargs)
