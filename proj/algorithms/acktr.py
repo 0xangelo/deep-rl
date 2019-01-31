@@ -4,36 +4,36 @@ from baselines import logger
 from proj.utils.kfac import KFACOptimizer
 from proj.utils.tqdm_util import trange
 from proj.utils.saver import SnapshotSaver
-from proj.common.models import default_baseline
+from proj.common.models import ValueFunction
 from proj.common.env_pool import EnvPool
 from proj.common.sampling import parallel_collect_samples, compute_pg_vars
 from proj.common.utils import line_search
 from proj.common.log_utils import save_config, log_reward_statistics, \
-    log_baseline_statistics, log_action_distribution_statistics, \
+    log_val_fn_statistics, log_action_distribution_statistics, \
     log_average_kl_divergence
 
 
 DEFAULT_PIKFAC = dict(eps=1e-3, pi=True, alpha=0.95, kl_clip=1e-2, eta=1.0)
 DEFAULT_VFKFAC = dict(eps=1e-3, pi=True, alpha=0.95, kl_clip=1e-2, eta=1.0)
 
-def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=4000,
+def acktr(env_maker, policy, val_fn=None, steps=int(1e6), batch=4000,
           n_envs=16, gamma=0.99, gaelam=0.96, val_iters=20, pikfac={},
           vfkfac={}, **saver_kwargs):
 
     # handling default values
     pikfac = {**DEFAULT_PIKFAC, **pikfac}
     vfkfac = {**DEFAULT_VFKFAC, **vfkfac}
-    if baseline is None:
-        baseline = default_baseline(policy)
+    if val_fn is None:
+        val_fn = ValueFunction.from_policy(policy)
 
     save_config(locals())
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     env = env_maker()
     policy = policy.pop('class')(env, **policy)
-    baseline = baseline.pop('class')(env, **baseline)
+    val_fn = val_fn.pop('class')(env, **val_fn)
     pol_optim = KFACOptimizer(policy, **pikfac)
-    val_optim = KFACOptimizer(baseline, **vfkfac)
+    val_optim = KFACOptimizer(val_fn, **vfkfac)
     loss_fn = torch.nn.MSELoss()
 
     # Algorithm main loop
@@ -47,7 +47,7 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=4000,
 
             logger.info("Computing policy gradient variables")
             all_obs, all_acts, all_advs = compute_pg_vars(
-                buffer, policy, baseline, gamma, gaelam
+                buffer, policy, val_fn, gamma, gaelam
             )
 
             logger.info("Computing natural gradient using KFAC")
@@ -91,16 +91,16 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=4000,
             for p in policy.parameters():
                 p.data.add_(scale, p.grad.data)
 
-            logger.info("Updating baseline")
+            logger.info("Updating val_fn")
             targets = buffer["returns"]
             for _ in range(val_iters):
                 with val_optim.record_stats():
-                    baseline.zero_grad()
-                    values = baseline(all_obs)
+                    val_fn.zero_grad()
+                    values = val_fn(all_obs)
                     noise = values.detach() + torch.randn_like(values) * 0.5
                     loss_fn(values, noise).backward(retain_graph=True)
 
-                baseline.zero_grad()
+                val_fn.zero_grad()
                 val_loss = loss_fn(values, targets)
                 val_loss.backward()
                 val_optim.step()
@@ -109,7 +109,7 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=4000,
             logger.info("Logging information")
             logger.logkv('TotalNSamples', (updt+1) * (batch - (batch % n_envs)))
             log_reward_statistics(env)
-            log_baseline_statistics(buffer)
+            log_val_fn_statistics(buffer["values"], buffer["returns"])
             log_action_distribution_statistics(old_dists)
             log_average_kl_divergence(old_dists, policy, all_obs)
             logger.dumpkvs()
@@ -120,7 +120,7 @@ def acktr(env_maker, policy, baseline=None, steps=int(1e6), batch=4000,
                 dict(
                     alg=dict(last_iter=updt),
                     policy=policy.state_dict(),
-                    baseline=baseline.state_dict(),
+                    val_fn=val_fn.state_dict(),
                     pol_optim=pol_optim.state_dict(),
                     val_optim=val_optim.state_dict(),
                 )

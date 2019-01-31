@@ -7,14 +7,31 @@ from abc import ABC, abstractmethod
 from proj.common import distributions
 
 
-def uint8_to_float32(tensor):
-    return tensor.float() / 255.0
+class ToFloat(nn.Module):
+    def __init__(self, dtype):
+        super().__init__()
+        self.scale = 1 / 250.0 if dtype is np.uint8 else 1
+
+    def forward(self, x):
+        return x.float() * self.scale
 
 
-def one_hot(n_cat):
-    def to_one_hot(tensor):
-        return torch.eye(n_cat)[tensor]
-    return to_one_hot
+class OneHot(nn.Module):
+    def __init__(self, n_cat):
+        super().__init__()
+        self.n_cat = n_cat
+
+    def forward(self, x):
+        return torch.eye(n_cat)[x]
+
+
+class Flatten(nn.Module):
+    def __init__(self, flat_size):
+        super().__init__()
+        self.flat_size = flat_size
+
+    def forward(self, x):
+        return x.reshape(-1, self.flat_size)
 
 # ==============================
 # Models
@@ -24,22 +41,17 @@ class Model(nn.Module):
     def __init__(self, env, **kwargs):
         super().__init__()
         self.ob_space = space = env.observation_space
-        self.observation_processing = []
         if isinstance(space, spaces.Box):
-            n_features = np.prod(space.shape)
-            if space.dtype.type is np.uint8:
-                self.observation_processing.append(uint8_to_float32)
+            self.in_features = np.prod(space.shape)
+            self.process_obs = ToFloat(space.dtype.type)
         elif isinstance(space, spaces.Discrete):
-            n_features = space.n
-            self.observation_processing.append(one_hot(space.n))
+            self.in_features = space.n
+            self.process_obs = OneHot(space.n)
         else:
             raise ValueError("{} is not a valid space type".format(str(space)))
-        self.in_features = n_features
 
     def forward(self, obs):
-        for process in self.observation_processing:
-            obs = process(obs)
-        return obs.float()
+        return self.process_obs(obs)
 
 
 class FeedForwardModel(ABC):
@@ -91,33 +103,34 @@ class CNNModel(Model, FeedForwardModel):
     def __init__(self, env, **kwargs):
         super().__init__(env, **kwargs)
         self.in_channels = self.ob_space.shape[-1]
-        self.conv1 = nn.Conv2d(self.in_channels, 16, 8, stride=4)
-        self.conv2 = nn.Conv2d(16, 32, 4, stride=2)
-        self.fc = nn.Linear(2592, 256)
-        self.out_features = 256
-        self.activation = nn.ReLU()
+        self.hidden_net = nn.Sequential(
+            nn.Conv2d(self.in_channels, 32, 8, stride=4),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, 4, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(64, 32, 3, stride=1),
+            nn.ReLU(),
+            Flatten(32 * 7 * 7),
+            nn.Linear(32 * 7 * 7, 512),
+            nn.ReLU()
+        )
+        self.out_features = 512
 
-        def initialize(*modules):
-            for module in modules:
-                if isinstance(module, nn.Conv2d):
-                    nn.init.orthogonal_(module.weight, gain=math.sqrt(2))
-                    nn.init.constant_(module.bias, 0)
-                elif isinstance(module, nn.Linear):
-                    nn.init.orthogonal_(module.weight, gain=1.0)
-                    nn.init.constant_(module.bias, 0)
-        initialize(self.conv1, self.conv2, self.fc)
+        def initialize(module):
+            if isinstance(module, (nn.Conv2d, nn.Linear)):
+                nn.init.orthogonal_(
+                    module.weight, gain=nn.init.calculate_gain('relu'))
+                nn.init.constant_(module.bias, 0)
+        self.hidden_net.apply(initialize)
 
     def forward(self, obs):
         obs = super().forward(obs)
         # Add a batch dim if necessary and move channels to appropriate pos
         obs = obs.reshape(-1, *self.ob_space.shape)
         obs = obs.permute(0, 3, 1, 2)
-        h1 = self.activation(self.conv1(obs))
-        h2 = self.activation(self.conv2(h1))
+        feats = self.hidden_net(obs)
         # Remove batch dim for single observations
-        h2 = h2.view(-1, self.fc.in_features).squeeze(0)
-        h3 = self.activation(self.fc(h2))
-        return h3
+        return feats.squeeze(0)
 
 # ==============================
 # Policies
@@ -170,82 +183,58 @@ class CNNPolicy(FeedForwardPolicy, CNNModel):
     pass
 
 # ==============================
-# Baselines
+# Value Functions
 # ==============================
 
-class Baseline(ABC):
+class ValueFunction(ABC):
     @abstractmethod
     def forward(self, obs):
         """
-        Given some observations, compute the baselines.
+        Given some observations, compute the state values.
 
         Args:
             obs (Tensor): A batch of observations
 
-        return (Tensor): baselines for each observation
+        return (Tensor): state values for each observation
         """
         pass
 
+    @staticmethod
+    def from_policy(policy):
+        pol_type = policy['class']
+        if issubclass(pol_type, MlpModel):
+            kwargs = {'class': MlpValueFunction, 'activation': nn.ELU}
+            if 'hidden_sizes' in policy:
+                kwargs['hidden_sizes'] = policy['hidden_sizes']
+            return kwargs
+        elif issubclass(pol_type, CNNModel):
+            return {'class': CNNValueFunction}
+        else:
+            raise ValueError("Unrecognized policy type")
 
-class ZeroBaseline(Model, Baseline):
+
+class ZeroValueFunction(Model, ValueFunction):
     def forward(self, obs):
-        return torch.zeros(len(obs))
+        return torch.zeros(len(obs.reshape(-1, *self.ob_space.shape)))
 
 
-class FeedForwardBaseline(FeedForwardModel, Baseline):
+class FeedForwardValueFunction(FeedForwardModel, ValueFunction):
     def __init__(self, env, **kwargs):
-        # For input, we will concatenate the observation with the time, so we
-        # need to increment the observation dimension
-        ob_space = env.observation_space
-        self.concat_time = False
-
-        if isinstance(ob_space, spaces.Box) and len(ob_space.shape) == 1:
-            self.concat_time = True
-            # Use environment to send new ob_space to superclass
-            env.observation_space = spaces.Box(
-                low=np.append(ob_space.low, 0),
-                high=np.append(ob_space.high, 2 ** 32),
-                dtype=ob_space.dtype
-            )
-            self.timestep_limit = env.spec.timestep_limit
-
         super().__init__(env, **kwargs)
-        # Restore original ob_space if changed
-        env.observation_space = ob_space
         self.val_layer = nn.Linear(self.out_features, 1)
         nn.init.orthogonal_(self.val_layer.weight, gain=0.01)
 
     def forward(self, obs):
-        if self.concat_time:
-            # Add a batch dim if necessary
-            obs = obs.reshape(-1, self.in_features-1)
-            # Append relative timestep to observation
-            # Remove batch dim for single observations
-            ts = torch.arange(len(obs)).to(obs) / self.timestep_limit
-            obs = torch.cat((obs, ts[:, None]), dim=-1).squeeze(0)
         feats = super().forward(obs)
         return self.val_layer(feats).squeeze()
 
 
-class MlpBaseline(FeedForwardBaseline, MlpModel):
+class MlpValueFunction(FeedForwardValueFunction, MlpModel):
     pass
 
 
-class CNNBaseline(FeedForwardBaseline, CNNModel):
+class CNNValueFunction(FeedForwardValueFunction, CNNModel):
     pass
-
-
-def default_baseline(policy):
-    pol_type = policy['class']
-    if issubclass(pol_type, MlpModel):
-        kwargs = {'class': MlpBaseline, 'activation': nn.ELU}
-        if 'hidden_sizes' in policy:
-            kwargs['hidden_sizes'] = policy['hidden_sizes']
-        return kwargs
-    elif issubclass(pol_type, CNNModel):
-        return {'class': CNNBaseline}
-    else:
-        raise ValueError("Unrecognized policy type")
 
 # ==============================
 # Weight sharing models
@@ -286,7 +275,8 @@ class FeedForwardWeightSharingAC(FeedForwardModel, WeightSharingAC):
         self.ac_space = env.action_space
         self.pdtype = distributions.pdtype(self.ac_space, self.out_features)
         self.val_layer = nn.Linear(self.out_features, 1)
-        nn.init.orthogonal_(self.val_layer.weight, gain=0.01)
+        nn.init.orthogonal_(self.val_layer.weight, gain=1.0)
+        nn.init.constant_(self.val_layer.bias, 0)
 
     def forward(self, obs):
         feats = super().forward(obs)
