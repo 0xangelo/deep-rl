@@ -57,25 +57,24 @@ def log_reward_statistics(env):
 
 
 @torch.no_grad()
-def log_baseline_statistics(buffer):
-    baselines, returns = buffer['baselines'], buffer['returns']
-    logger.logkv('ValueLoss', torch.nn.MSELoss()(baselines, returns).item())
-    logger.logkv('ExplainedVariance', explained_variance_1d(baselines, returns))
+def log_val_fn_statistics(values, returns):
+    logger.logkv('ValueLoss', torch.nn.MSELoss()(values, returns).item())
+    logger.logkv('ExplainedVariance', explained_variance_1d(values, returns))
 
 
 @torch.no_grad()
 def log_action_distribution_statistics(dists):
-    logger.logkv_mean('Entropy', dists.entropy().mean().item())
-    logger.logkv_mean('Perplexity', dists.perplexity().mean().item())
+    logger.logkv('Entropy', dists.entropy().mean().item())
+    logger.logkv('Perplexity', dists.perplexity().mean().item())
     if isinstance(dists, DiagNormal):
-        logger.logkv_mean('AveragePolicyStd', dists.stddev.mean().item())
+        logger.logkv('AveragePolicyStd', dists.stddev.mean().item())
         for idx in range(dists.stddev.shape[-1]):
-            logger.logkv_mean('AveragePolicyStd[{}]'.format(idx),
+            logger.logkv('AveragePolicyStd[{}]'.format(idx),
                           dists.stddev[...,idx].mean().item())
     elif isinstance(dists, Categorical):
-        probs = dists.probs.mean(0)
+        probs = dists.probs.mean(0).tolist()
         for idx, prob in enumerate(probs):
-            logger.logkv_mean('AveragePolicyProb[{}]'.format(idx), prob)
+            logger.logkv('AveragePolicyProb[{}]'.format(idx), prob)
 
 
 @torch.no_grad()
