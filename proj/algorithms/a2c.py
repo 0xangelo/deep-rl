@@ -48,11 +48,11 @@ def a2c(env_maker, policy, val_fn=None, n_envs=16, k=5, gamma=0.99,
                 = next(gen)
 
             # Compute returns and advantages
-            all_rets = all_rews
-            all_rets[-1] += (1-all_dones[-1]) * next_vals
+            all_rets = all_rews.clone()
+            all_rets[-1] += gamma * (1-all_dones[-1]) * next_vals
             for i in reversed(range(k-1)):
-                all_rets[i] += (1-all_dones[i]) * gamma * all_rets[i+1]
-            all_advs = all_rets - all_vals
+                all_rets[i] += gamma * (1-all_dones[i]) * all_rets[i+1]
+            all_advs = all_rets - all_vals.detach()
 
             # Compute loss
             log_li = all_dists.log_prob(all_acts.reshape(batch, -1).squeeze())
