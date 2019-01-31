@@ -34,7 +34,7 @@ class SnapshotSaver(object):
         )
 
     def save_state(self, index, state):
-        if index % self.interval == 0:
+        if index == 1 or index % self.interval == 0:
             state = (self.config, state)
             file_path = self.get_snapshot_path(index)
             os.makedirs(os.path.dirname(file_path), exist_ok=True)

@@ -19,6 +19,9 @@ class DummyTqdmFile(object):
         if len(x.rstrip()) > 0:
             _tqdm.write(x, file=self.file)
 
+    def read(self, x):
+        raise RuntimeError("Can't read from DummyTqdmFile")
+
     def flush(self):
         return getattr(self.file, "flush", lambda: None)()
 
@@ -31,7 +34,7 @@ def std_out():
 def tqdm_out():
     try:
         sys.stdout, sys.stderr = map(DummyTqdmFile, ORIG_STD_OUT_ERR)
-        yield 
+        yield
     # Relay exceptions
     except Exception as exc:
         raise exc
@@ -42,7 +45,7 @@ def tqdm_out():
 
 def trange(*args, **kwargs):
     """
-    A wrapper for tqdm.trange, automatically setting file=std_out() and 
+    A wrapper for tqdm.trange, automatically setting file=std_out() and
     dynamic_ncols=True if not specified.
     """
     if 'file' not in kwargs: kwargs['file'] = std_out()
@@ -52,7 +55,7 @@ def trange(*args, **kwargs):
 
 def tqdm(*args, **kwargs):
     """
-    A wrapper for tqdm.tqdm, automatically setting file=std_out() and 
+    A wrapper for tqdm.tqdm, automatically setting file=std_out() and
     dynamic_ncols=True if not specified.
     """
     if 'file' not in kwargs: kwargs['file'] = std_out()
