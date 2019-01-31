@@ -41,10 +41,6 @@ def parallel_collect_samples(env_pool, policy, num_samples):
         all_acts[step] = actions
         all_rews[step] = rews
         all_dones[step] = dones
-        for env, (last_done, done) in enumerate(zip(last_dones, dones)):
-            if done:
-                slices.append((slice(last_done, step+1), env))
-                last_dones[env] = step
         obs = next_obs
     env_pool.flush()
 
@@ -56,21 +52,20 @@ def parallel_collect_samples(env_pool, policy, num_samples):
         observations=all_obs,
         actions=all_acts,
         rewards=all_rews,
-        dones=all_dones,
-        slices=slices
+        dones=all_dones
     )
 
 
 def samples_generator(env_pool, policy, k, compute_dists_vals):
     obs = env_pool.reset()
-    dists, vals = compute_dists_vals(torch.as_tensor(obs))
+    dists, vals = compute_dists_vals(torch.from_numpy(obs))
 
     n = env_pool.n_envs
     while True:
         all_acts = torch.empty((k, n) + policy.pdtype.sample_shape)
         all_dists = torch.empty((k, n) + policy.pdtype.param_shape)
-        all_rews = np.empty((k, n), dtype=np.float32)
-        all_dones = np.empty((k, n), dtype=np.float32)
+        all_rews = torch.empty((k, n))
+        all_dones = torch.empty((k, n))
         all_vals = torch.empty((k, n))
 
         for i in range(k):
@@ -79,15 +74,13 @@ def samples_generator(env_pool, policy, k, compute_dists_vals):
 
             next_obs, rews, dones, _ = env_pool.step(acts.numpy())
             all_acts[i] = acts
-            all_rews[i] = rews
-            all_dones[i] = dones
+            all_rews[i] = torch.from_numpy(rews).float()
+            all_dones[i] = torch.from_numpy(dones).float()
             all_dists[i] = dists.flat_params
             all_vals[i] = vals
 
-            dists, vals = compute_dists_vals(torch.as_tensor(next_obs))
+            dists, vals = compute_dists_vals(torch.from_numpy(next_obs))
 
-        all_rews = torch.from_numpy(all_rews)
-        all_dones = torch.from_numpy(all_dones)
         all_dists = policy.pdtype.from_flat(all_dists.reshape(k*n, -1))
         yield all_acts, all_rews, all_dones, all_dists, all_vals, vals.detach()
 
@@ -96,40 +89,31 @@ def samples_generator(env_pool, policy, k, compute_dists_vals):
 # ==============================
 
 @torch.no_grad()
-def compute_pg_vars(buffer, policy, baseline, gamma, gaelam):
+def compute_pg_vars(buffer, policy, val_fn, gamma, gaelam):
     """
     Compute variables needed for various policy gradient algorithms
     """
-    observations = torch.from_numpy(buffer.pop("observations"))
-    actions = buffer["actions"]
-    rewards = buffer["rewards"]
-    dones = buffer.pop("dones")
-    returns = rewards.copy()
-    baselines = torch.empty(observations.shape[:2])
+    observations = buffer.pop("observations")
+    rewards = buffer.pop("rewards")
+    masks = np.invert(buffer.pop("dones"))
 
-    slices = buffer.pop("slices")
-    for interval in slices:
-        baselines[interval] = baseline(observations[interval])
-    # baselines = baseline(observations)
-    values = baselines.numpy()
-    values[-1, dones[-1]] = 0
-    deltas = rewards + gamma*values[1:] - values[:-1]
-    returns[-1] += gamma * values[-1]
-
+    values = val_fn(torch.from_numpy(observations)).numpy()
+    deltas = rewards + gamma * (masks*values[1:]) - values[:-1]
+    rewards[-1] += gamma * (masks[-1]*values[-1])
     gaemul = gamma * gaelam
     for step in reversed(range(len(rewards)-1)):
-        deltas[step] += (1-dones[step]) * gaemul * deltas[step+1]
-        returns[step] += (1-dones[step]) * gamma * returns[step+1]
+        deltas[step] += gaemul * (masks[step]*deltas[step+1])
+        rewards[step] += gamma * (masks[step]*rewards[step+1])
 
     # Normalizing the advantage values can make the algorithm more robust to
     # reward scaling
     buffer["advantages"] = (deltas-deltas.mean()) / deltas.std()
     buffer["observations"] = observations[:-1]
-    buffer["baselines"] = baselines[:-1]
-    buffer["returns"] = returns
+    buffer["values"] = values[:-1]
+    buffer["returns"] = rewards
 
     batch_size = np.prod(rewards.shape)
     for k, v in buffer.items():
-        buffer[k] = torch.as_tensor(v).reshape(batch_size, -1).squeeze()
+        buffer[k] = torch.from_numpy(v).reshape(batch_size, -1).squeeze()
 
     return buffer['observations'], buffer['actions'], buffer['advantages']
