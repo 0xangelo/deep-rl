@@ -74,8 +74,8 @@ def samples_generator(env_pool, policy, k, compute_dists_vals):
 
             next_obs, rews, dones, _ = env_pool.step(acts.numpy())
             all_acts[i] = acts
-            all_rews[i] = torch.from_numpy(rews).float()
-            all_dones[i] = torch.from_numpy(dones).float()
+            all_rews[i] = torch.from_numpy(rews.astype('f'))
+            all_dones[i] = torch.from_numpy(dones.astype('f'))
             all_dists[i] = dists.flat_params
             all_vals[i] = vals
 
