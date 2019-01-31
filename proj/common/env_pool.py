@@ -34,13 +34,13 @@ def env_worker(env_maker, conn, n_envs):
                     flusher(True)
                 conn.send(None)
             elif command == 'close':
-                conn.close()
                 break
             else:
                 raise ValueError("Unrecognized command: {}".format(command))
     except KeyboardInterrupt:
         print('EnvPool worker: got KeyboardInterrupt')
     finally:
+        conn.close()
         for env in envs:
             env.close()
 
@@ -181,13 +181,13 @@ def shm_worker(env_maker, conn, n_envs, obs_bufs, obs_shape, obs_dtype):
                     flusher(True)
                 conn.send(None)
             elif command == 'close':
-                conn.close()
                 break
             else:
                 raise RuntimeError("Unrecognized command: {}".format(command))
     except KeyboardInterrupt:
         print('ShmEnvPool worker: got KeyboardInterrupt')
     finally:
+        conn.close()
         for env in envs:
             env.close()
 
@@ -196,7 +196,7 @@ class ShmEnvPool(object):
     def __init__(self, env_maker, n_envs=mp.cpu_count(),
                  n_parallel=mp.cpu_count()):
         dummy = env_maker()
-        ob_space = dummy.observation_space
+        self.ob_space = ob_space = dummy.observation_space
         self.obs_shape, self.obs_dtype = ob_space.shape, ob_space.dtype
         del dummy
 
