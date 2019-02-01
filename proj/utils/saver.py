@@ -8,9 +8,9 @@ import cloudpickle.cloudpickle as cpkl
 # ==============================
 
 class SnapshotSaver(object):
-    def __init__(self, path, config=None, interval=10, latest_only=None):
+    def __init__(self, path, config=None, save_interval=10, latest_only=None):
         self.path = path
-        self.interval = interval
+        self.save_interval = save_interval
         self.config = copy.deepcopy(config)
 
         if latest_only is None:
@@ -34,7 +34,7 @@ class SnapshotSaver(object):
         )
 
     def save_state(self, index, state):
-        if index == 1 or index % self.interval == 0:
+        if index == 1 or index % self.save_interval == 0:
             state = (self.config, state)
             file_path = self.get_snapshot_path(index)
             os.makedirs(os.path.dirname(file_path), exist_ok=True)

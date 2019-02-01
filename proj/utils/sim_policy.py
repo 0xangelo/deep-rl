@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import pprint
 from proj.utils.saver import SnapshotSaver
+from proj.common.env_makers import get_monitor
 
 
 @click.command()
@@ -21,8 +22,8 @@ def main(path, index, runs, norender):
     """
 
     snapshot = None
+    saver = SnapshotSaver(path)
     while snapshot is None:
-        saver = SnapshotSaver(path, latest_only=(index is None))
         snapshot = saver.get_state(index)
         if snapshot is None:
             time.sleep(1)
@@ -37,16 +38,11 @@ def main(path, index, runs, norender):
         ob = env.reset()
         done = False
         while not done:
-            action = policy.actions(torch.from_numpy(ob))
+            action = policy.actions(torch.from_numpy(np.asarray(ob)))
             ob, rew, done, _ = env.step(action.numpy())
             if not norender: env.render()
 
-    # keep unwrapping until we get the monitor
-    while not isinstance(env, gym.wrappers.Monitor):
-        if not isinstance(env, gym.Wrapper):
-            assert False
-        env = env.env
-    assert isinstance(env, gym.wrappers.Monitor)
+    env = get_monitor(env)
     if runs > 10:
         print("Average total reward:", np.mean(env.get_episode_rewards()))
         print("Average episode length:", np.mean(env.get_episode_lengths()))
