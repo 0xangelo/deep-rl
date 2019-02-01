@@ -5,6 +5,14 @@ from baselines.common.atari_wrappers import make_atari, wrap_deepmind
 from gym.envs.atari.atari_env import AtariEnv
 
 
+def get_monitor(env):
+    if isinstance(env, gym.wrappers.Monitor):
+        return env
+    elif hasattr(env, 'env'):
+        return get_monitor(env.env)
+    return None
+
+
 class EnvMaker(object):
     def __init__(self, env_id):
         self.env_id = env_id

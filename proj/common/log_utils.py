@@ -7,6 +7,7 @@ from baselines import logger
 from torch.distributions.kl import kl_divergence as kl
 from proj.utils.json_util import convert_json
 from proj.common.utils import explained_variance_1d
+from proj.common.env_makers import get_monitor
 from proj.common.distributions import DiagNormal, Categorical
 
 
@@ -21,11 +22,7 @@ def save_config(config):
 # ==============================
 
 def log_reward_statistics(env):
-    # keep unwrapping until we get the monitor
-    while not isinstance(env, gym.wrappers.Monitor):
-        if not isinstance(env, gym.Wrapper):
-            assert False
-        env = env.env
+    env = get_monitor(env)
     assert isinstance(env, gym.wrappers.Monitor)
 
     all_stats = None

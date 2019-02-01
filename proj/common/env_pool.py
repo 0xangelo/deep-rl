@@ -1,7 +1,7 @@
 import numpy as np
 import multiprocessing as mp
-from gym.wrappers import Monitor
 import ctypes
+from proj.common.env_makers import get_monitor
 
 # ==============================
 # Using mp.Pipe (pickles data)
@@ -9,11 +9,7 @@ import ctypes
 
 def env_worker(env_maker, conn, n_envs):
     envs = [env_maker() for _ in range(n_envs)]
-    flushers = []
-    for env in envs:
-        while not isinstance(env, Monitor):
-            env = env.env
-        flushers.append(env._flush)
+    flushers = [get_monitor(env)._flush for env in envs]
     try:
         while True:
             command, data = conn.recv()
@@ -147,11 +143,7 @@ _NP_TO_CT = {np.float32: ctypes.c_float,
 
 def shm_worker(env_maker, conn, n_envs, obs_bufs, obs_shape, obs_dtype):
     envs = [env_maker() for _ in range(n_envs)]
-    flushers = []
-    for env in envs:
-        while not isinstance(env, Monitor):
-            env = env.env
-        flushers.append(env._flush)
+    flushers = [get_monitor(env)._flush for env in envs]
     def _write_obs(obs):
         for ob, obs_buf in zip(obs, obs_bufs):
             dst = obs_buf.get_obj()
