@@ -10,13 +10,13 @@ from proj.common.log_utils import save_config, log_reward_statistics, \
     log_action_distribution_statistics, log_val_fn_statistics
 
 
-def a2c(env_maker, policy, val_fn=None, n_envs=16, k=5, gamma=0.99,
+def a2c(env_maker, policy, val_fn=None, n_envs=16, k=20, gamma=0.99,
         optimizer={}, max_grad_norm=0.5, ent_coeff=0.01, vf_loss_coeff=0.5,
         log_interval=100, samples=int(10e6), **saver_kwargs):
     assert val_fn is None or not issubclass(policy['class'], WeightSharingAC), \
         "Choose between a weight sharing model or separate policy and val_fn"
 
-    optimizer = {'class': torch.optim.RMSprop, 'lr': 7e-4, 'eps': 1e-5,
+    optimizer = {'class': torch.optim.RMSprop, 'lr': 1e-3, 'eps': 1e-5,
                  'alpha': 0.99, **optimizer}
     if val_fn is None and not issubclass(policy['class'], WeightSharingAC):
         val_fn = ValueFunction.from_policy(policy)
@@ -29,7 +29,7 @@ def a2c(env_maker, policy, val_fn=None, n_envs=16, k=5, gamma=0.99,
     param_list = torch.nn.ParameterList(policy.parameters())
     if val_fn is not None:
         val_fn = val_fn.pop('class')(env, **val_fn)
-        params.extend(val_fn.parameters())
+        param_list.extend(val_fn.parameters())
     optimizer = optimizer.pop('class')(param_list.parameters(), **optimizer)
     loss_fn = torch.nn.MSELoss()
 
@@ -56,8 +56,8 @@ def a2c(env_maker, policy, val_fn=None, n_envs=16, k=5, gamma=0.99,
 
             # Compute loss
             log_li = all_dists.log_prob(all_acts.reshape(batch, -1).squeeze())
-            pi_loss = - torch.mean(log_li * all_advs.reshape(-1))
-            vf_loss = loss_fn(all_vals.reshape(-1), all_rets.reshape(-1))
+            pi_loss = - torch.mean(log_li * all_advs.flatten())
+            vf_loss = loss_fn(all_vals.flatten(), all_rets.flatten())
             entropy = all_dists.entropy().mean()
             total_loss = pi_loss - ent_coeff*entropy + vf_loss_coeff*vf_loss
 

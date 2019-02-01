@@ -104,17 +104,15 @@ class CNNModel(Model, FeedForwardModel):
         super().__init__(env, **kwargs)
         self.in_channels = self.ob_space.shape[-1]
         self.hidden_net = nn.Sequential(
-            nn.Conv2d(self.in_channels, 32, 8, stride=4),
+            nn.Conv2d(self.in_channels, 16, 8, stride=4),
             nn.ReLU(),
-            nn.Conv2d(32, 64, 4, stride=2),
+            nn.Conv2d(16, 32, 4, stride=2),
             nn.ReLU(),
-            nn.Conv2d(64, 32, 3, stride=1),
-            nn.ReLU(),
-            Flatten(32 * 7 * 7),
-            nn.Linear(32 * 7 * 7, 512),
+            Flatten(2592),
+            nn.Linear(2592, 256),
             nn.ReLU()
         )
-        self.out_features = 512
+        self.out_features = 256
 
         def initialize(module):
             if isinstance(module, (nn.Conv2d, nn.Linear)):
