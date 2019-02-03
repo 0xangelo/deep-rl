@@ -45,7 +45,7 @@ class KFACOptimizer(optim.Optimizer):
         self.alpha = alpha
         self.kl_clip = kl_clip
         self.eta = eta
-        self.recording = False
+        self._recording = False
         self.params = []
         self._iteration_counter = 0
 
@@ -71,21 +71,17 @@ class KFACOptimizer(optim.Optimizer):
     def step(self):
         """Preconditions and applies gradients."""
         fisher_norm = 0.
-        for group in self.param_groups:
-            params = group['params']
-            if 'layer_type' not in group:
-                fisher_norm += sum((p.grad * p.grad).sum() for p in params)
-                continue
-
+        for group in self.param_groups[:-1]:
             # Getting parameters
+            params = group['params']
             weight, bias = params if len(params) == 2 else (params[0], None)
             state = self.state[weight]
 
             # Update convariances and inverses
             self._compute_covs(group, state)
             if self._iteration_counter % self.update_freq == 0:
-                ixxt, iggt = self._inv_covs(state['xxt'], state['ggt'],
-                                            state['num_locations'])
+                ixxt, iggt = self._inv_covs(
+                    state['xxt'], state['ggt'], state['num_locations'])
                 state.update((('ixxt', ixxt), ('iggt', iggt)))
 
             # Preconditionning
@@ -101,6 +97,9 @@ class KFACOptimizer(optim.Optimizer):
             self.state[weight].pop('x', None)
             self.state[weight].pop('gy', None)
 
+        fisher_norm += sum(
+            (p.grad * p.grad).sum() for p in self.param_groups[-1]['params'])
+
         # Eventually scale the norm of the gradients and apply each
         scale = min(self.eta, torch.sqrt(self.kl_clip / fisher_norm))
         for group in self.param_groups:
@@ -112,21 +111,21 @@ class KFACOptimizer(optim.Optimizer):
     @contextlib.contextmanager
     def record_stats(self):
         try:
-            self.recording = True
+            self._recording = True
             yield
         except Exception as excep:
             raise excep
         finally:
-            self.recording = False
+            self._recording = False
 
     def _save_input(self, mod, i):
         """Saves input of layer to compute covariance."""
-        if self.recording:
+        if self._recording:
             self.state[mod.weight]['x'] = i[0]
 
     def _save_grad_output(self, mod, grad_input, grad_output):
         """Saves grad on output of layer to compute covariance."""
-        if self.recording:
+        if self._recording:
             self.state[mod.weight]['gy'] = grad_output[0]*grad_output[0].size(0)
 
     def _precond(self, weight, bias, group, state):
@@ -177,8 +176,7 @@ class KFACOptimizer(optim.Optimizer):
     def _compute_covs(self, group, state):
         """Computes the covariances."""
         weight = group['params'][0]
-        x = self.state[weight]['x']
-        gy = self.state[weight]['gy']
+        x, gy = state['x'], state['gy']
         # Computation of xxt
         if group['layer_type'] == 'Conv2d':
             if not self.sua:
