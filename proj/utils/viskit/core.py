@@ -126,7 +126,7 @@ def load_exps_data(exp_folder_paths, ignore_missing_keys=False, verbose=True):
                 params=params,
                 flat_params=flatten_dict(params)
             ))
-        except IOError as e:
+        except (IOError, pandas.errors.EmptyDataError) as e:
             if verbose:
                 print(e)
 
