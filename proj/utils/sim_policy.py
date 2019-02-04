@@ -1,11 +1,10 @@
-import gym
 import click
 import time
-import numpy as np
 import torch
 import pprint
+from baselines import logger
 from proj.utils.saver import SnapshotSaver
-from proj.common.env_makers import get_monitor
+from proj.common.log_utils import log_reward_statistics
 
 
 @click.command()
@@ -38,19 +37,13 @@ def main(path, index, runs, norender):
         ob = env.reset()
         done = False
         while not done:
-            action = policy.actions(torch.from_numpy(np.asarray(ob)))
+            action = policy.actions(torch.from_numpy(ob))
             ob, rew, done, _ = env.step(action.numpy())
             if not norender: env.render()
 
-    env = get_monitor(env)
-    if runs > 10:
-        print("Average total reward:", np.mean(env.get_episode_rewards()))
-        print("Average episode length:", np.mean(env.get_episode_lengths()))
-    else:
-        print("Episode Rewards:", env.get_episode_rewards())
-        print("Episode Lengths:", env.get_episode_lengths())
-    env.unwrapped.close()
-
+    log_reward_statistics(env)
+    logger.dumpkvs()
+    env.close()
 
 if __name__ == "__main__":
     main()
