@@ -5,6 +5,16 @@ from torch.autograd import grad
 from torch.distributions.kl import kl_divergence
 
 
+_NP_TO_PT = {np.float64: torch.float64,
+             np.float32: torch.float32,
+             np.float16: torch.float16,
+             np.int64: torch.int64,
+             np.int32: torch.int32,
+             np.int16: torch.int16,
+             np.int8: torch.int8,
+             np.uint8: torch.uint8}
+
+
 def set_global_seeds(seed):
     np.random.seed(seed)
     random.seed(seed)

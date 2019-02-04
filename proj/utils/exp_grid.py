@@ -23,7 +23,6 @@ import subprocess
 import base64
 import cloudpickle
 import zlib
-import json
 import time
 from collections import OrderedDict
 from subprocess import CalledProcessError
@@ -81,17 +80,18 @@ def create_experiment(exp_name, thunk, seed=42, log_dir=None, format_strs=None,
         from baselines import logger
         from proj.utils.tqdm_util import tqdm_out
         from proj.common.utils import set_global_seeds
-        from proj.common.env_makers import EnvMaker
+        from proj.common.log_utils import save_config
+        from proj.common.env_makers import VecEnvMaker
 
         set_global_seeds(seed)
 
         if 'env' in kwargs:
-            kwargs['env_maker'] = EnvMaker(kwargs['env'])
+            kwargs['env_maker'] = VecEnvMaker(kwargs['env'])
             del kwargs['env']
 
         with tqdm_out(), logger.scoped_configure(log_dir, format_strs):
-            with open(os.path.join(log_dir, 'variant.json'), 'wt') as f:
-                json.dump({'exp_name': exp_name}, f)
+            logger.set_level(logger.WARN)
+            save_config({'exp_name': exp_name})
             thunk(**kwargs)
 
     return thunk_plus

@@ -1,7 +1,7 @@
 import numpy as np
 import multiprocessing as mp
 import ctypes
-from proj.common.env_makers import get_monitor
+from baselines.common.vec_env import VecEnv
 
 # ==============================
 # Using mp.Pipe (pickles data)
@@ -9,7 +9,6 @@ from proj.common.env_makers import get_monitor
 
 def env_worker(env_maker, conn, n_envs):
     envs = [env_maker() for _ in range(n_envs)]
-    flushers = [get_monitor(env)._flush for env in envs]
     try:
         while True:
             command, data = conn.recv()
@@ -25,10 +24,10 @@ def env_worker(env_maker, conn, n_envs):
                     if done: next_ob = env.reset()
                     results.append((next_ob, rew, done, info))
                 conn.send(results)
-            elif command == 'flush':
-                for flusher in flushers:
-                    flusher(True)
-                conn.send(None)
+            elif command == 'get_spaces':
+                conn.send((envs[0].observation_space, envs[0].action_space))
+            elif command == 'render':
+                conn.send([env.render(mode='rgb_array') for env in envs])
             elif command == 'close':
                 break
             else:
@@ -41,7 +40,7 @@ def env_worker(env_maker, conn, n_envs):
             env.close()
 
 
-class EnvPool(object):
+class EnvPool(VecEnv):
     """
     Using a pool of workers to run multiple environments in parallel. This
     implementation supports multiple environments per worker to be as flexible
@@ -50,85 +49,85 @@ class EnvPool(object):
 
     def __init__(self, env_maker, n_envs=mp.cpu_count(),
                  n_parallel=mp.cpu_count()):
-        self.env_maker = env_maker
-        self.n_envs = n_envs
         # No point in having more parallel workers than environments
-        if n_parallel > n_envs:
-            n_parallel = n_envs
-        self.n_parallel = n_parallel
-        self.workers = []
-        self.conns = []
+        self.n_parallel = n_envs if n_parallel > n_envs else n_parallel
         # try to split evenly, but this isn't always possible
-        n_worker_envs = [
-            len(d) for d in np.array_split(np.arange(n_envs), n_parallel)]
-        self.worker_env_seps = np.concatenate([[0], np.cumsum(n_worker_envs)])
-        self.last_obs = None
+        num_worker_envs = [
+            len(d) for d in np.array_split(np.arange(n_envs), self.n_parallel)]
+        self.worker_env_seps = np.concatenate([[0], np.cumsum(num_worker_envs)])
 
-    def start(self):
-        for n_envs in (self.worker_env_seps[1:] - self.worker_env_seps[:-1]):
+        self.workers, self.conns = [], []
+        for num_envs in (self.worker_env_seps[1:] - self.worker_env_seps[:-1]):
             worker_conn, master_conn = mp.Pipe()
             worker = mp.Process(
-                target=env_worker, args=(self.env_maker, worker_conn, n_envs))
+                target=env_worker, args=(env_maker, worker_conn, num_envs))
             worker.daemon = True
             worker.start()
             self.workers.append(worker)
             self.conns.append(master_conn)
 
+        self.conns[0].send(('get_spaces', None))
+        ob_space, ac_space = self.conns[0].recv()
+        super().__init__(n_envs, ob_space, ac_space)
+
+        self.waiting = False
+        self.closed = False
+
         # set initial seeds
         seeds = np.random.randint(
-            low=0, high=np.iinfo(np.int32).max, size=self.n_envs)
+            low=0, high=np.iinfo(np.int32).max, size=n_envs)
         self.seed(seeds)
 
-    def __enter__(self):
-        self.start()
-        return self
-
     def reset(self):
+        assert not self.closed
+        if self.waiting:
+            self.step_wait()
         for conn in self.conns:
             conn.send(('reset', None))
         obs = []
         for conn in self.conns:
             obs.extend(conn.recv())
-        assert len(obs) == self.n_envs
-        self.last_obs = np.stack(obs)
-        return self.last_obs
+        return np.stack(obs)
 
-    def flush(self):
-        for conn in self.conns:
-            conn.send(('flush', None))
-        for conn in self.conns:
-            conn.recv()
-
-    def step(self, actions):
-        assert len(actions) == self.n_envs
+    def step_async(self, actions):
+        assert not self.waiting and not self.closed
         for conn, acts in zip(self.conns,
                               np.split(actions, self.worker_env_seps[1:-1])):
             conn.send(('step', acts))
+        self.waiting = True
 
+    def step_wait(self):
+        assert self.waiting and not self.closed
         results = []
         for conn in self.conns:
             results.extend(conn.recv())
         next_obs, rews, dones, infos = zip(*results)
-        self.last_obs = np.stack(next_obs)
-        return self.last_obs, np.asarray(rews), np.asarray(dones), infos
+        self.waiting = False
+        return np.stack(next_obs), np.asarray(rews), np.asarray(dones), infos
 
     def seed(self, seeds):
-        assert len(seeds) == self.n_envs
+        assert not self.waiting and not self.closed
         for conn, data in zip(self.conns,
                               np.split(seeds, self.worker_env_seps[1:-1])):
             conn.send(('seed', data))
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close()
-
-    def close(self):
+    def close_extras(self):
+        if self.waiting:
+            self.step_wait()
         for conn in self.conns:
             conn.send(('close', None))
             conn.close()
         for worker in self.workers:
             worker.join()
-        self.workers.clear()
-        self.conns.clear()
+
+    def get_images(self):
+        assert not self.waiting and not self.closed
+        for conn in self.conns:
+            conn.send(('render', None))
+        imgs = []
+        for conn in self.conns:
+            imgs.extend(conn.recv())
+        return imgs
 
 # ==============================
 # Using shared memory
@@ -143,7 +142,6 @@ _NP_TO_CT = {np.float32: ctypes.c_float,
 
 def shm_worker(env_maker, conn, n_envs, obs_bufs, obs_shape, obs_dtype):
     envs = [env_maker() for _ in range(n_envs)]
-    flushers = [get_monitor(env)._flush for env in envs]
     def _write_obs(obs):
         for ob, obs_buf in zip(obs, obs_bufs):
             dst = obs_buf.get_obj()
@@ -153,8 +151,7 @@ def shm_worker(env_maker, conn, n_envs, obs_bufs, obs_shape, obs_dtype):
         while True:
             command, data = conn.recv()
             if command == 'reset':
-                _write_obs([env.reset() for env in envs])
-                conn.send(None)
+                conn.send(_write_obs([env.reset() for env in envs]))
             elif command == 'seed':
                 for env, seed in zip(envs, data):
                     env.seed(int(seed))
@@ -168,10 +165,8 @@ def shm_worker(env_maker, conn, n_envs, obs_bufs, obs_shape, obs_dtype):
                     obs.append(ob)
                 _write_obs(obs)
                 conn.send(results)
-            elif command == 'flush':
-                for flusher in flushers:
-                    flusher(True)
-                conn.send(None)
+            elif command == 'render':
+                conn.send([env.render(mode='rgb_array') for env in envs])
             elif command == 'close':
                 break
             else:
@@ -184,101 +179,98 @@ def shm_worker(env_maker, conn, n_envs, obs_bufs, obs_shape, obs_dtype):
             env.close()
 
 
-class ShmEnvPool(object):
+class ShmEnvPool(VecEnv):
     def __init__(self, env_maker, n_envs=mp.cpu_count(),
                  n_parallel=mp.cpu_count()):
         dummy = env_maker()
-        self.ob_space = ob_space = dummy.observation_space
-        self.obs_shape, self.obs_dtype = ob_space.shape, ob_space.dtype
+        ob_space, ac_space = dummy.observation_space, dummy.action_space
         del dummy
-
-        self.env_maker = env_maker
-        self.n_envs = n_envs
-        self.workers = []
-        self.conns = []
+        super().__init__(n_envs, ob_space, ac_space)
 
         # No point in having more parallel workers than environments
-        if n_parallel > n_envs:
-            n_parallel = n_envs
-        self.n_parallel = n_parallel
+        self.n_parallel = n_envs if n_parallel > n_envs else n_parallel
         # try to split evenly, but this isn't always possible
-        n_worker_envs = [
-            len(d) for d in np.array_split(np.arange(n_envs), n_parallel)]
-        self.worker_env_seps = np.concatenate([[0], np.cumsum(n_worker_envs)])
-        self.obs_bufs = []
-        self.last_obs = None
+        num_worker_envs = [
+            len(d) for d in np.array_split(np.arange(n_envs), self.n_parallel)]
+        self.worker_env_seps = np.concatenate([[0], np.cumsum(num_worker_envs)])
 
-    def start(self):
-        for _ in range(self.n_envs):
-            self.obs_bufs.append(mp.Array(_NP_TO_CT[self.obs_dtype.type],
-                                          int(np.prod(self.obs_shape))))
+        self.obs_dtype, self.obs_shape = ob_space.dtype, ob_space.shape
+        self.obs_bufs = []
+        for _ in range(n_envs):
+            self.obs_bufs.append(mp.Array(_NP_TO_CT[ob_space.dtype.type],
+                                          int(np.prod(ob_space.shape))))
+
+        self.workers, self.conns = [], []
         for beg, end in zip(self.worker_env_seps[:-1],
                             self.worker_env_seps[1:]):
             worker_conn, master_conn = mp.Pipe()
             worker = mp.Process(
                 target=shm_worker,
-                args=(self.env_maker, worker_conn, end - beg,
-                      self.obs_bufs[beg:end], self.obs_shape, self.obs_dtype))
+                args=(env_maker, worker_conn, end - beg,
+                      self.obs_bufs[beg:end], ob_space.shape, ob_space.dtype))
             worker.daemon = True
             worker.start()
             self.workers.append(worker)
             self.conns.append(master_conn)
 
+        self.waiting = False
+        self.closed = False
+
         # set initial seeds
         seeds = np.random.randint(
-            low=0, high=np.iinfo(np.int32).max, size=self.n_envs)
+            low=0, high=np.iinfo(np.int32).max, size=n_envs)
         self.seed(seeds)
 
-    def __enter__(self):
-        self.start()
-        return self
-
-    def seed(self, seeds):
-        assert len(seeds) == self.n_envs
-        for conn, data in zip(self.conns,
-                              np.split(seeds, self.worker_env_seps[1:-1])):
-            conn.send(('seed', data))
-
     def reset(self):
+        assert not self.closed
+        if self.waiting:
+            self.step_wait()
         for conn in self.conns:
             conn.send(('reset', None))
         for conn in self.conns:
             conn.recv()
-        self.last_obs = self._decode_obses()
-        return self.last_obs
+        return self._decode_obses()
 
-    def step(self, actions):
-        assert len(actions) == self.n_envs
+    def step_async(self, actions):
+        assert not self.waiting and not self.closed
         for conn, acts in zip(self.conns,
                               np.split(actions, self.worker_env_seps[1:-1])):
             conn.send(('step', acts))
+        self.waiting = True
 
+    def step_wait(self):
+        assert self.waiting and not self.closed
         results = []
         for conn in self.conns:
             results.extend(conn.recv())
         rews, dones, infos = zip(*results)
-        self.last_obs = self._decode_obses()
-        return self.last_obs, np.asarray(rews), np.asarray(dones), infos
+        self.waiting = False
+        return self._decode_obses(), np.asarray(rews), np.asarray(dones), infos
 
-    def flush(self):
-        for conn in self.conns:
-            conn.send(('flush', None))
-        for conn in self.conns:
-            conn.recv()
+    def seed(self, seeds):
+        assert not self.waiting and not self.closed
+        for conn, data in zip(self.conns,
+                              np.split(seeds, self.worker_env_seps[1:-1])):
+            conn.send(('seed', data))
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.close(exc_type)
-
-    def close(self, exc_type):
+    def close_extras(self):
+        if self.waiting:
+            self.step_wait()
         for conn in self.conns:
-            if exc_type is None:
-                conn.send(('close', None))
+            conn.send(('close', None))
             conn.close()
         for worker in self.workers:
             worker.join()
         self.obs_bufs.clear()
-        self.conns.clear()
-        self.workers.clear()
+
+    def get_images(self):
+        assert not self.waiting and not self.closed
+        for conn in self.conns:
+            conn.send(('render', None))
+        imgs = []
+        for conn in self.conns:
+            imgs.extend(conn.recv())
+        return imgs
 
     def _decode_obses(self):
         results = [
