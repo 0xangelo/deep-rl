@@ -22,7 +22,7 @@ import torch.optim as optim
 
 class KFACOptimizer(optim.Optimizer):
     def __init__(self, net, eps, sua=False, pi=False, update_freq=1,
-                 alpha=1.0, kl_clip=1e-3, eta=1.0):
+                 alpha=1.0, kl_clip=1e-3, eta=1.0, lr=1.0):
         """ K-FAC Optimizer for Linear and Conv2d layers.
 
         Computes the K-FAC of the second moment of the gradients.
@@ -66,7 +66,7 @@ class KFACOptimizer(optim.Optimizer):
 
         param_list = [p for p in net.parameters() if p not in param_set]
         self.params.append({'params': param_list})
-        super(KFACOptimizer, self).__init__(self.params, {})
+        super(KFACOptimizer, self).__init__(self.params, {'lr': lr})
 
     def step(self):
         """Preconditions and applies gradients."""
@@ -105,7 +105,7 @@ class KFACOptimizer(optim.Optimizer):
         for group in self.param_groups:
             for param in group['params']:
                 param.grad.data *= scale
-                param.data.sub_(param.grad.data)
+                param.data.sub_(group['lr'], param.grad.data)
         self._iteration_counter += 1
 
     @contextlib.contextmanager

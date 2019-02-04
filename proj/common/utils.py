@@ -1,5 +1,6 @@
-import torch, random, numpy as np
-import scipy.signal
+import torch
+import random
+import numpy as np
 from torch.autograd import grad
 from torch.distributions.kl import kl_divergence
 
@@ -8,24 +9,6 @@ def set_global_seeds(seed):
     np.random.seed(seed)
     random.seed(seed)
     torch.manual_seed(seed)
-
-
-def discount_cumsum(x, discount):
-    """
-    magic from rllab for computing discounted cumulative sums of vectors.
-
-    input:
-        vector x,
-        [x0,
-         x1,
-         x2]
-
-    output:
-        [x0 + discount * x1 + discount^2 * x2,
-         x1 + discount * x2,
-         x2]
-    """
-    return scipy.signal.lfilter([1], [1, float(-discount)], x[::-1], axis=0)[::-1]
 
 
 def flat_grad(*args, **kwargs):
@@ -41,6 +24,13 @@ def explained_variance_1d(ypred, y):
         else:
             return 1
     return 1 - (y - ypred).var().item() / (vary + 1e-8)
+
+
+def update_linear_schedule(optimizer, epoch, total_num_epochs, initial_lr):
+    """Decreases the learning rate linearly"""
+    lr = initial_lr - (initial_lr * (epoch / float(total_num_epochs)))
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
 
 # ==============================
 # Hessian-free optimization util
