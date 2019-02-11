@@ -22,8 +22,8 @@ def vanilla(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     vec_env = env_maker(n_envs)
-    policy = policy.pop('class')(env, **policy)
-    val_fn = val_fn.pop('class')(env, **val_fn)
+    policy = policy.pop('class')(vec_env, **policy)
+    val_fn = val_fn.pop('class')(vec_env, **val_fn)
     pol_optim = optimizer.pop('class')(policy.parameters(), **optimizer)
     val_optim = torch.optim.Adam(val_fn.parameters(), lr=val_lr)
     loss_fn = torch.nn.MSELoss()
@@ -32,7 +32,7 @@ def vanilla(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
     collector = parallel_samples_collector(vec_env, policy, steps)
     beg, end, stp = steps * n_envs, total_samples + steps*n_envs, steps * n_envs
     for samples in trange(beg, end, stp, desc="Training", unit="step"):
-        logger.info("Starting iteration {}".format(updt))
+        logger.info("Starting iteration {}".format(samples // stp))
         logger.logkv("Iteration", samples // stp)
 
         logger.info("Start collecting samples")
@@ -40,11 +40,12 @@ def vanilla(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
 
         logger.info("Computing policy gradient variables")
         compute_pg_vars(trajs, policy, val_fn, gamma, gaelam)
-        flatten_trajs(trajs, steps * n_envs)
+        flatten_trajs(trajs)
         all_obs, all_acts, _, _, all_advs, all_vals, all_rets = trajs.values()
+        all_obs, all_vals = all_obs[:-n_envs], all_vals[:-n_envs]
 
         logger.info("Applying policy gradient")
-        all_dists = policy(all_obs[:-n_envs])
+        all_dists = policy(all_obs)
         old_dists = all_dists.detach()
         J0 = torch.mean(all_dists.log_prob(all_acts) * all_advs)
         pol_optim.zero_grad()
@@ -61,7 +62,7 @@ def vanilla(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
         logger.logkv("Objective", J0.item())
         logger.logkv('TotalNSamples', samples)
         log_reward_statistics(vec_env)
-        log_val_fn_statistics(all_vals[:-n_envs], all_rets)
+        log_val_fn_statistics(all_vals, all_rets)
         log_action_distribution_statistics(old_dists)
         log_average_kl_divergence(old_dists, policy, all_obs)
         logger.dumpkvs()
@@ -70,7 +71,7 @@ def vanilla(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
         saver.save_state(
             samples // stp,
             dict(
-                alg=dict(last_iter=updt),
+                alg=dict(last_iter=samples // stp),
                 policy=policy.state_dict(),
                 val_fn=val_fn.state_dict(),
                 pol_optim=pol_optim.state_dict(),

@@ -5,7 +5,8 @@ from baselines import logger
 from proj.utils.tqdm_util import trange
 from proj.utils.saver import SnapshotSaver
 from proj.common.models import ValueFunction
-from proj.common.sampling import parallel_samples_collector, compute_pg_vars
+from proj.common.sampling import parallel_samples_collector, compute_pg_vars, \
+    flatten_trajs
 from proj.common.log_utils import save_config, log_reward_statistics, \
     log_val_fn_statistics, log_action_distribution_statistics
 
@@ -22,14 +23,14 @@ def ppo(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     vec_env = env_maker(n_envs)
-    policy = policy.pop('class')(env, **policy)
-    val_fn = val_fn.pop('class')(env, **val_fn)
+    policy = policy.pop('class')(vec_env, **policy)
+    val_fn = val_fn.pop('class')(vec_env, **val_fn)
     pol_optim = torch.optim.Adam(policy.parameters(), lr=pol_lr)
     val_optim = torch.optim.Adam(val_fn.parameters(), lr=val_lr)
     loss_fn = torch.nn.MSELoss()
 
     # Algorithm main loop
-    collector = parallel_samples_collector(vec_env, policy, batch)
+    collector = parallel_samples_collector(vec_env, policy, steps)
     beg, end, stp = steps * n_envs, total_samples + steps*n_envs, steps * n_envs
     for samples in trange(beg, end, stp, desc="Training", unit="step"):
         logger.info("Starting iteration {}".format(samples // stp))
@@ -40,7 +41,7 @@ def ppo(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
 
         logger.info("Computing policy gradient variables")
         compute_pg_vars(trajs, policy, val_fn, gamma, gaelam)
-        flatten_trajs(trajs, steps * n_envs)
+        flatten_trajs(trajs)
         all_obs, all_acts, _, _, all_advs, all_vals, all_rets = trajs.values()
         all_obs, all_vals = all_obs[:-n_envs], all_vals[:-n_envs]
 
@@ -51,7 +52,7 @@ def ppo(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
         min_advs = torch.where(
             all_advs > 0, (1+clip_ratio) * all_advs, (1-clip_ratio) * all_advs)
         dataset = TensorDataset(all_obs, all_acts, all_advs, min_advs, old_logp)
-        dataloader = DataLoader(dataset, batch_size=batch, shuffle=True)
+        dataloader = DataLoader(dataset, batch_size=mb_size, shuffle=True)
         for itr in range(pol_iters):
             for obs, acts, advs, madv, logp in dataloader:
                 ratios = (policy(obs).log_prob(acts) - logp).exp()

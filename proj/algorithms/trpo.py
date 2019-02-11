@@ -30,7 +30,7 @@ def trpo(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
     loss_fn = torch.nn.MSELoss()
 
     # Algorithm main loop
-    collector = parallel_samples_collector(vec_env, policy, batch)
+    collector = parallel_samples_collector(vec_env, policy, steps)
     beg, end, stp = steps * n_envs, total_samples + steps*n_envs, steps * n_envs
     for samples in trange(beg, end, stp, desc="Training", unit="step"):
         logger.info("Starting iteration {}".format(samples // stp))
@@ -41,7 +41,7 @@ def trpo(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
 
         logger.info("Computing policy gradient variables")
         compute_pg_vars(trajs, policy, val_fn, gamma, gaelam)
-        flatten_trajs(trajs, steps * n_envs)
+        flatten_trajs(trajs)
         all_obs, all_acts, _, _, all_advs, all_vals, all_rets = trajs.values()
         all_obs, all_vals = all_obs[:-n_envs], all_vals[:-n_envs]
 

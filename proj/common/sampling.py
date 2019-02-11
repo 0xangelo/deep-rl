@@ -94,9 +94,9 @@ def compute_pg_vars(trajs, policy, val_fn, gamma, gaelam):
     masks = (1 - dones).to(rewards)
     returns = rewards.clone()
 
-    if rewards.dim() > 1:
-        observations = observations.reshape(rewards.numel(), -1)
-    values = val_fn(observations).reshape_as(rewards)
+    values_shape = torch.cat((rewards, rewards[0:1])).shape
+    observations = observations.reshape(values_shape.numel(), -1)
+    values = val_fn(observations).reshape(values_shape)
     deltas = rewards + gamma * (masks*values[1:]) - values[:-1]
     returns[-1] += gamma * (masks[-1]*values[-1])
     gaemul = gamma * gaelam
@@ -113,9 +113,9 @@ def compute_pg_vars(trajs, policy, val_fn, gamma, gaelam):
     trajs["returns"] = returns
 
 
-def flatten_trajs(trajs, batch_size):
+def flatten_trajs(trajs):
     """
     Flattens the entries in trajs along the first dimension.
     """
     for k, v in trajs.items():
-        trajs[k] = v.reshape(batch_size, -1).squeeze()
+        trajs[k] = v.reshape(v.shape[0:2].numel(), -1).squeeze()
