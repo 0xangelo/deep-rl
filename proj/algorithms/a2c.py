@@ -24,10 +24,10 @@ def a2c(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     vec_env = env_maker(n_envs)
-    policy = policy.pop('class')(env, **policy)
+    policy = policy.pop('class')(vec_env, **policy)
     param_list = torch.nn.ParameterList(policy.parameters())
     if val_fn is not None:
-        val_fn = val_fn.pop('class')(env, **val_fn)
+        val_fn = val_fn.pop('class')(vec_env, **val_fn)
         param_list.extend(val_fn.parameters())
     optimizer = optimizer.pop('class')(param_list.parameters(), **optimizer)
     loss_fn = torch.nn.MSELoss()
@@ -37,7 +37,7 @@ def a2c(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
         compute_dists_vals = policy
     else:
         compute_dists_vals = lambda obs: policy(obs), val_fn(obs)
-    generator = samples_generator(vec_env, policy, k, compute_dists_vals)
+    generator = samples_generator(vec_env, policy, steps, compute_dists_vals)
     logger.info("Starting epoch {}".format(1))
     beg, end, stp = steps * n_envs, total_samples + steps*n_envs, steps * n_envs
     for samples in trange(beg, end, stp, desc="Training", unit="step"):
@@ -47,7 +47,7 @@ def a2c(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
         # Compute returns and advantages
         all_rets = all_rews.clone()
         all_rets[-1] += gamma * (1-all_dones[-1]) * next_vals
-        for i in reversed(range(k-1)):
+        for i in reversed(range(steps-1)):
             all_rets[i] += gamma * (1-all_dones[i]) * all_rets[i+1]
         all_advs = all_rets - all_vals.detach()
 
