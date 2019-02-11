@@ -43,12 +43,10 @@ class KFACOptimizer(optim.Optimizer):
         self.pi = pi
         self.update_freq = update_freq
         self.alpha = alpha
-        self.kl_clip = kl_clip
         self.eta = eta
         self._recording = False
-        self.params = []
-        self._iteration_counter = 0
 
+        param_groups = []
         param_set = set()
         for mod in net.modules():
             mod_class = type(mod).__name__
@@ -60,13 +58,14 @@ class KFACOptimizer(optim.Optimizer):
                 params = [mod.weight]
                 if mod.bias is not None:
                     params.append(mod.bias)
-                d = {'params': params, 'info': info, 'layer_type': mod_class}
-                self.params.append(d)
+                param_groups.append(
+                    {'params': params, 'info': info, 'layer_type': mod_class})
                 param_set.update(set(params))
 
-        param_list = [p for p in net.parameters() if p not in param_set]
-        self.params.append({'params': param_list})
-        super(KFACOptimizer, self).__init__(self.params, {'lr': lr})
+        param_groups.append(
+            {'params': [p for p in net.parameters() if p not in param_set]})
+        super(KFACOptimizer, self).__init__(param_groups, {'lr': lr})
+        self.state['kl_clip'] = kl_clip
 
     def step(self):
         """Preconditions and applies gradients."""
@@ -78,11 +77,13 @@ class KFACOptimizer(optim.Optimizer):
             state = self.state[weight]
 
             # Update convariances and inverses
+            state.setdefault('step', 0)
             self._compute_covs(group, state)
-            if self._iteration_counter % self.update_freq == 0:
+            if state['step'] % self.update_freq == 0:
                 ixxt, iggt = self._inv_covs(
                     state['xxt'], state['ggt'], state['num_locations'])
                 state.update((('ixxt', ixxt), ('iggt', iggt)))
+            state['step'] += 1
 
             # Preconditionning
             gw, gb = self._precond(weight, bias, group, state)
@@ -101,12 +102,11 @@ class KFACOptimizer(optim.Optimizer):
             (p.grad * p.grad).sum() for p in self.param_groups[-1]['params'])
 
         # Eventually scale the norm of the gradients and apply each
-        scale = min(self.eta, torch.sqrt(self.kl_clip / fisher_norm))
+        scale = min(self.eta, torch.sqrt(self.state['kl_clip'] / fisher_norm))
         for group in self.param_groups:
             for param in group['params']:
-                param.grad.data *= scale
+                param.grad.data.mul_(scale)
                 param.data.sub_(group['lr'], param.grad.data)
-        self._iteration_counter += 1
 
     @contextlib.contextmanager
     def record_stats(self):
@@ -190,7 +190,7 @@ class KFACOptimizer(optim.Optimizer):
         if len(group['params']) == 2:
             ones = torch.ones_like(x[:1])
             x = torch.cat([x, ones], dim=0)
-        if self._iteration_counter == 0:
+        if state['step'] == 0:
             state['xxt'] = torch.mm(x, x.t()) / float(x.shape[1])
         else:
             state['xxt'].addmm_(mat1=x, mat2=x.t(),
@@ -204,7 +204,7 @@ class KFACOptimizer(optim.Optimizer):
         else:
             gy = gy.data.t()
             state['num_locations'] = 1
-        if self._iteration_counter == 0:
+        if state['step'] == 0:
             state['ggt'] = torch.mm(gy, gy.t()) / float(gy.shape[1])
         else:
             state['ggt'].addmm_(mat1=gy, mat2=gy.t(),

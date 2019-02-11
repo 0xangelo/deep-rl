@@ -3,6 +3,7 @@ import random
 import numpy as np
 from torch.autograd import grad
 from torch.distributions.kl import kl_divergence
+from torch.optim.lr_scheduler import _LRScheduler
 
 
 _NP_TO_PT = {np.float64: torch.float64,
@@ -36,11 +37,14 @@ def explained_variance_1d(ypred, y):
     return 1 - (y - ypred).var().item() / (vary + 1e-8)
 
 
-def update_linear_schedule(optimizer, epoch, total_num_epochs, initial_lr):
-    """Decreases the learning rate linearly"""
-    lr = initial_lr - (initial_lr * (epoch / float(total_num_epochs)))
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
+class LinearLR(_LRScheduler):
+    def __init__(self, optimizer, total_num_epochs, last_epoch=-1):
+        super().__init__(optimizer, last_epoch=last_epoch)
+        self.total_num_epochs = float(total_num_epochs)
+
+    def get_lr():
+        return [base_lr - (base_lr * (self.last_epoch / self.total_num_epochs))
+                for base_lr in self.base_lrs]
 
 # ==============================
 # Hessian-free optimization util

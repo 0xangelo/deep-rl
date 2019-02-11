@@ -5,7 +5,7 @@ from proj.utils.kfac import KFACOptimizer
 from proj.utils.saver import SnapshotSaver
 from proj.utils.tqdm_util import trange
 from proj.common.models import WeightSharingAC, ValueFunction
-from proj.common.utils import _NP_TO_PT, update_linear_schedule
+from proj.common.utils import _NP_TO_PT, LinearLR
 from proj.common.log_utils import save_config, log_reward_statistics, \
     log_action_distribution_statistics, log_val_fn_statistics
 
@@ -34,19 +34,22 @@ def a2c_kfac(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
         val_fn = val_fn.pop('class')(vec_env, **val_fn)
         module_list.extend(val_fn.modules())
     optimizer = KFACOptimizer(module_list, **kfac)
+    # scheduler = LinearLR(optimizer, total_samples // (steps*n_envs))
     loss_fn = torch.nn.MSELoss()
 
     # load state if provided
+    updates = 0
     if warm_start is not None:
         if ':' in warm_start:
             warm_start, index = warm_start.split(':')
-            _, state = SnapshotSaver(
+            config, state = SnapshotSaver(
                 warm_start, latest_only=False).get_state(int(index))
         else:
-            _, state = SnapshotSaver(warm_start).get_state()
+            config, state = SnapshotSaver(warm_start).get_state()
         policy.load_state_dict(state['policy'])
         if 'optimizer' in state:
             optimizer.load_state_dict(state['optimizer'])
+        updates = state['alg']['last_updt']
         del state
 
     # Algorith main loop
@@ -104,14 +107,14 @@ def a2c_kfac(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
         all_advs = all_rets - all_vals.detach()
 
         # Compute loss
-        updates = samples // stp
-        ent_bonus = ent_coeff - (ent_coeff * ((updates-1)/float(total_updates)))
+        updates += 1
+        # ent_coeff = ent_coeff*0.99 if updates % 10 == 0 else ent_coeff
         pi_loss = - torch.mean(logp * all_advs)
         vf_loss = loss_fn(all_vals, all_rets)
         entropy = all_dists.entropy().mean()
-        total_loss = pi_loss - ent_bonus*entropy + vf_loss_coeff*vf_loss
+        total_loss = pi_loss - ent_coeff*entropy + vf_loss_coeff*vf_loss
 
-        update_linear_schedule(optimizer, updates-1, total_updates, 1.0)
+        # scheduler.step()
         optimizer.zero_grad()
         total_loss.backward()
         optimizer.step()
