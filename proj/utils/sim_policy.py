@@ -13,8 +13,8 @@ from proj.common.log_utils import log_reward_statistics
               type=int, default=None)
 @click.option("--runs", help="Number of episodes to simulate",
               type=int, default=2)
-@click.option("--norender", help="""Whether or not to render the
-              simulation on screen""", is_flag=True)
+@click.option("--norender", help="Don't render the simulation on screen",
+              is_flag=True)
 def main(path, index, runs, norender):
     """
     Loads a snapshot and simulates the corresponding policy and environment.
@@ -33,13 +33,15 @@ def main(path, index, runs, norender):
     policy = config['policy'].pop('class')(env, **config['policy'])
     policy.load_state_dict(state['policy'])
 
-    for _ in range(runs):
-        ob = env.reset()
-        done = False
-        while not done:
-            action = policy.actions(torch.from_numpy(ob))
-            ob, rew, done, _ = env.step(action.numpy())
-            if not norender: env.render()
+    with torch.no_grad():
+        for _ in range(runs):
+            ob = env.reset()
+            done = False
+            while not done:
+                action = policy.actions(torch.from_numpy(ob))
+                ob, rew, done, _ = env.step(action.numpy())
+                if not norender:
+                    env.render()
 
     log_reward_statistics(env)
     logger.dumpkvs()
