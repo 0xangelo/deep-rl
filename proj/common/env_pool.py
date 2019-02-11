@@ -103,7 +103,7 @@ class EnvPool(VecEnv):
             results.extend(conn.recv())
         next_obs, rews, dones, infos = zip(*results)
         self.waiting = False
-        return np.stack(next_obs), np.asarray(rews), np.asarray(dones), infos
+        return np.stack(next_obs), np.stack(rews), np.stack(dones), infos
 
     def seed(self, seeds):
         assert not self.waiting and not self.closed
@@ -245,7 +245,7 @@ class ShmEnvPool(VecEnv):
             results.extend(conn.recv())
         rews, dones, infos = zip(*results)
         self.waiting = False
-        return self._decode_obses(), np.asarray(rews), np.asarray(dones), infos
+        return self._decode_obses(), np.stack(rews), np.stack(dones), infos
 
     def seed(self, seeds):
         assert not self.waiting and not self.closed
