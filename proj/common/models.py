@@ -22,7 +22,12 @@ class OneHot(nn.Module):
         self.n_cat = n_cat
 
     def forward(self, x):
-        return torch.eye(n_cat)[x]
+        return torch.eye(self.n_cat)[x]
+
+
+class Concat(ToFloat):
+    def forward(self, *args):
+        return super().forward(torch.cat(args, dim=-1))
 
 
 class Flatten(nn.Module):
@@ -38,20 +43,28 @@ class Flatten(nn.Module):
 # ==============================
 
 class Model(nn.Module):
-    def __init__(self, env, **kwargs):
+    def __init__(self, env, concat_action=False, **kwargs):
         super().__init__()
-        self.ob_space = space = env.observation_space
-        if isinstance(space, spaces.Box):
-            self.in_features = np.prod(space.shape)
-            self.process_obs = ToFloat(space.dtype.type)
-        elif isinstance(space, spaces.Discrete):
-            self.in_features = space.n
-            self.process_obs = OneHot(space.n)
+        self.ob_space = ob_space = env.observation_space
+        if concat_action:
+            self.ac_space = ac_space = env.action_space
+            assert all((
+                isinstance(ac_space, spaces.Box), len(ac_space.shape) == 1,
+                isinstance(ob_space, spaces.Box), len(ob_space.shape) == 1
+            )), "Currently only supports concatenating continuous spaces"
+            self.in_features = np.prod(ob_space.shape) + np.prod(ac_space.shape)
+            self.process_input = Concat(ob_space.dtype.type)
+        elif isinstance(ob_space, spaces.Box):
+            self.in_features = np.prod(ob_space.shape)
+            self.process_input = ToFloat(ob_space.dtype.type)
+        elif isinstance(ob_space, spaces.Discrete):
+            self.in_features = ob_space.n
+            self.process_input = OneHot(space.n)
         else:
             raise ValueError("{} is not a valid space type".format(str(space)))
 
-    def forward(self, obs):
-        return self.process_obs(obs)
+    def forward(self, *args):
+        return self.process_input(*args)
 
 
 class FeedForwardModel(ABC):
@@ -85,6 +98,8 @@ class MlpModel(Model, FeedForwardModel):
         for in_features, out_features in zip(in_sizes[:-1], in_sizes[1:]):
             layers.append(nn.Linear(in_features, out_features))
             layers.append(activation())
+        if len(self.ob_space.shape) > 1:
+            layers = [Flatten(self.in_features)] + layers
         self.hidden_net = nn.Sequential(*layers)
         self.out_features = in_sizes[-1]
 
@@ -94,9 +109,9 @@ class MlpModel(Model, FeedForwardModel):
                 nn.init.constant_(module.bias, 0)
         self.hidden_net.apply(initialize)
 
-    def forward(self, obs):
-        obs = super().forward(obs)
-        return self.hidden_net(obs)
+    def forward(self, *args):
+        processed_input = super().forward(*args)
+        return self.hidden_net(processed_input)
 
 
 class CNNModel(Model, FeedForwardModel):
@@ -180,6 +195,61 @@ class MlpPolicy(FeedForwardPolicy, MlpModel):
 class CNNPolicy(FeedForwardPolicy, CNNModel):
     pass
 
+
+class DeterministicPolicy(ABC):
+    """
+    Limited to continuous action spaces
+    """
+    ac_space = None
+
+    @abstractmethod
+    def forward(self, obs):
+        """
+        Given a batch of observations, return a batch of actions
+
+        Args:
+        obs (Tensor): A batch of observations
+
+        return (Tensor): A batch of actions
+        """
+        pass
+
+    def actions(self, obs):
+        """
+        Given a batch of observations, return a batch of actions.
+
+        Args:
+        obs (Tensor): A batch of observations
+
+        return (Tensor): A batch of actions
+        """
+        return self(obs)
+
+
+class FeedForwardDeterministicPolicy(FeedForwardModel, DeterministicPolicy):
+    def __init__(self, env, **kwargs):
+        assert isinstance(env.action_space, spaces.Box), \
+            "Deterministic policies only handle continuous action spaces"
+        super().__init__(env, **kwargs)
+        self.ac_space = env.action_space
+        self.act_layer = nn.Linear(self.out_features, self.ac_space.shape[-1])
+        self.act_activ = nn.Sigmoid()
+        self.act_low = torch.Tensor(self.ac_space.low)
+        self.act_range = torch.Tensor(self.ac_space.high - self.ac_space.low)
+
+    def forward(self, obs):
+        feats = super().forward(obs)
+        fractions = self.act_activ(self.act_layer(feats))
+        return self.act_low + fractions*self.act_range
+
+
+class MlpDeterministicPolicy(FeedForwardDeterministicPolicy, MlpModel):
+    pass
+
+
+class CNNDeterministicPolicy(FeedForwardDeterministicPolicy, CNNModel):
+    pass
+
 # ==============================
 # Value Functions
 # ==============================
@@ -232,6 +302,42 @@ class MlpValueFunction(FeedForwardValueFunction, MlpModel):
 
 
 class CNNValueFunction(FeedForwardValueFunction, CNNModel):
+    pass
+
+
+class ContinuousQFunction(ABC):
+    @abstractmethod
+    def forward(self, obs, acts):
+        """
+        Given observation-action pairs, computes the estimated
+        optimal Q-values.
+        """
+        pass
+
+    @staticmethod
+    def from_policy(policy):
+        pol_type = policy['class']
+        if issubclass(pol_type, MlpModel):
+            kwargs = {'class': MlpContinuousQFunction, 'activation': nn.ReLU}
+            if 'hidden_sizes' in policy:
+                kwargs['hidden_sizes'] = policy['hidden_sizes']
+            return kwargs
+        else:
+            raise ValueError("Unrecognized policy type")
+
+
+class FeedForwardContinuousQFunction(FeedForwardModel, ContinuousQFunction):
+    def __init__(self, env, **kwargs):
+        super().__init__(env, concat_action=True, **kwargs)
+        self.val_layer = nn.Linear(self.out_features, 1)
+        nn.init.orthogonal_(self.val_layer.weight, gain=0.01)
+
+    def forward(self, obs, acts):
+        feats = super().forward(obs, acts)
+        return self.val_layer(feats).squeeze()
+
+
+class MlpContinuousQFunction(FeedForwardContinuousQFunction, MlpModel):
     pass
 
 # ==============================

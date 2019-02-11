@@ -19,7 +19,6 @@ import sys
 import os
 import os.path as osp
 import subprocess
-import gym
 from textwrap import dedent
 import proj.algorithms
 from proj.utils.exp_grid import ExperimentGrid
@@ -98,28 +97,6 @@ def parse_and_execute_grid_search(cmd, args):
     else:
         exp_name = 'cmd_' + cmd
 
-    # Special handling for environment: make sure that env_name is a real,
-    # registered gym environment.
-    valid_envs = [e.id for e in list(gym.envs.registry.all())]
-    assert 'env' in arg_dict, \
-        friendly_err("You did not give a value for --env! Add one and try again.")
-    for env_name in arg_dict['env']:
-        err_msg = dedent("""
-
-            %s is not registered with Gym.
-
-            Recommendations:
-
-                * Check for a typo (did you include the version tag?)
-
-                * View the complete list of valid Gym environments at
-
-                    https://gym.openai.com/envs/
-
-            """%env_name)
-        assert env_name in valid_envs, err_msg
-
-
     # Construct and execute the experiment grid.
     eg = ExperimentGrid(name=exp_name)
     for k,v in arg_dict.items():
@@ -129,8 +106,9 @@ def parse_and_execute_grid_search(cmd, args):
 
 if __name__ == '__main__':
     cmd = sys.argv[1]
-    valid_algos = ['vanilla', 'trpo', 'a2c', 'ppo', 'acktr', 'a2c_kfac']
-    valid_utils = ['plot', 'sim_policy']
+    valid_algos = ['vanilla', 'trpo', 'a2c', 'ppo', 'acktr', 'a2c_kfac', 'ddpg',
+                   'td3']
+    valid_utils = ['plot', 'sim_policy', 'record_policy']
     valid_cmds = valid_algos + valid_utils
     assert cmd in valid_cmds, \
         "Select an algorithm or utility which is implemented in proj."
