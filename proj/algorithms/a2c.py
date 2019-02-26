@@ -1,8 +1,8 @@
 import torch
 import numpy as np
 from baselines import logger
-from proj.utils.tqdm_util import trange
 from proj.utils.saver import SnapshotSaver
+from proj.utils.tqdm_util import trange
 from proj.common.models import WeightSharingAC, ValueFunction
 from proj.common.sampling import samples_generator
 from proj.common.log_utils import save_config, log_reward_statistics, \

@@ -2,12 +2,12 @@ import torch
 from torch.distributions.kl import kl_divergence as kl
 from baselines import logger
 from proj.utils.kfac import KFACOptimizer
-from proj.utils.tqdm_util import trange
 from proj.utils.saver import SnapshotSaver
+from proj.utils.tqdm_util import trange
 from proj.common.models import ValueFunction
+from proj.common.hf_util import line_search
 from proj.common.sampling import parallel_samples_collector, compute_pg_vars, \
     flatten_trajs
-from proj.common.utils import line_search
 from proj.common.log_utils import save_config, log_reward_statistics, \
     log_val_fn_statistics, log_action_distribution_statistics, \
     log_average_kl_divergence

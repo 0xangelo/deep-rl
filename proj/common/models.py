@@ -3,40 +3,9 @@ import torch
 import torch.nn as nn
 import numpy as np
 import gym.spaces as spaces
+import proj.common.distributions as dists
 from abc import ABC, abstractmethod
-from proj.common import distributions
-
-
-class ToFloat(nn.Module):
-    def __init__(self, dtype):
-        super().__init__()
-        self.scale = 1 / 250.0 if dtype is np.uint8 else 1
-
-    def forward(self, x):
-        return x.float() * self.scale
-
-
-class OneHot(nn.Module):
-    def __init__(self, n_cat):
-        super().__init__()
-        self.n_cat = n_cat
-
-    def forward(self, x):
-        return torch.eye(self.n_cat)[x]
-
-
-class Concat(ToFloat):
-    def forward(self, *args):
-        return super().forward(torch.cat(args, dim=-1))
-
-
-class Flatten(nn.Module):
-    def __init__(self, flat_size):
-        super().__init__()
-        self.flat_size = flat_size
-
-    def forward(self, x):
-        return x.reshape(-1, self.flat_size)
+from proj.utils.torch_util import ToFloat, Concat, OneHot, Flatten
 
 # ==============================
 # Models
@@ -175,14 +144,16 @@ class Policy(ABC):
 
         return (Tensor): A batch of actions
         """
-        return self(obs).sample()
+
+        return self(obs).sample() if self.training else self(obs).mode
 
 
 class FeedForwardPolicy(FeedForwardModel, Policy):
-    def __init__(self, env, **kwargs):
+    def __init__(self, env, clamp_acts=False, indep_std=True, **kwargs):
         super().__init__(env, **kwargs)
         self.ac_space = env.action_space
-        self.pdtype = distributions.pdtype(self.ac_space, self.out_features)
+        self.pdtype = dists.pdtype(self.ac_space, self.out_features,
+                                   clamp_acts=clamp_acts, indep_std=indep_std)
 
     def forward(self, obs):
         return self.pdtype(super().forward(obs))
@@ -233,14 +204,15 @@ class FeedForwardDeterministicPolicy(FeedForwardModel, DeterministicPolicy):
         super().__init__(env, **kwargs)
         self.ac_space = env.action_space
         self.act_layer = nn.Linear(self.out_features, self.ac_space.shape[-1])
-        self.act_activ = nn.Sigmoid()
-        self.act_low = torch.Tensor(self.ac_space.low)
-        self.act_range = torch.Tensor(self.ac_space.high - self.ac_space.low)
+        self.act_activ = nn.Tanh()
+        low, high = map(torch.Tensor, (self.ac_space.low, self.ac_space.high))
+        self.loc = (high+low) / 2
+        self.scale = (high-low) / 2
 
     def forward(self, obs):
         feats = super().forward(obs)
-        fractions = self.act_activ(self.act_layer(feats))
-        return self.act_low + fractions*self.act_range
+        tanh = self.act_activ(self.act_layer(feats))
+        return self.loc + tanh*self.scale
 
 
 class MlpDeterministicPolicy(FeedForwardDeterministicPolicy, MlpModel):
@@ -377,7 +349,7 @@ class FeedForwardWeightSharingAC(FeedForwardModel, WeightSharingAC):
     def __init__(self, env, **kwargs):
         super().__init__(env, **kwargs)
         self.ac_space = env.action_space
-        self.pdtype = distributions.pdtype(self.ac_space, self.out_features)
+        self.pdtype = dists.pdtype(self.ac_space, self.out_features)
         self.val_layer = nn.Linear(self.out_features, 1)
         nn.init.orthogonal_(self.val_layer.weight, gain=1.0)
         nn.init.constant_(self.val_layer.bias, 0)

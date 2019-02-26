@@ -6,3 +6,5 @@ from .acktr import acktr
 from .a2c_kfac import a2c_kfac
 from .ddpg import ddpg
 from .td3 import td3
+from .sac import sac
+from .sac2 import sac2

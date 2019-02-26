@@ -1,9 +1,9 @@
 import torch
-from torch.distributions.kl import kl_divergence as kl
 from torch.utils.data import TensorDataset, DataLoader
+from torch.distributions.kl import kl_divergence as kl
 from baselines import logger
-from proj.utils.tqdm_util import trange
 from proj.utils.saver import SnapshotSaver
+from proj.utils.tqdm_util import trange
 from proj.common.models import ValueFunction
 from proj.common.sampling import parallel_samples_collector, compute_pg_vars, \
     flatten_trajs

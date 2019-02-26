@@ -4,8 +4,8 @@ from baselines import logger
 from proj.utils.kfac import KFACOptimizer
 from proj.utils.saver import SnapshotSaver
 from proj.utils.tqdm_util import trange
+from proj.utils.torch_util import _NP_TO_PT, LinearLR
 from proj.common.models import WeightSharingAC, ValueFunction
-from proj.common.utils import _NP_TO_PT, LinearLR
 from proj.common.log_utils import save_config, log_reward_statistics, \
     log_action_distribution_statistics, log_val_fn_statistics
 

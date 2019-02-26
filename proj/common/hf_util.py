@@ -1,50 +1,6 @@
 import torch
-import random
-import numpy as np
-from torch.autograd import grad
 from torch.distributions.kl import kl_divergence
-from torch.optim.lr_scheduler import _LRScheduler
-
-
-_NP_TO_PT = {np.float64: torch.float64,
-             np.float32: torch.float32,
-             np.float16: torch.float16,
-             np.int64: torch.int64,
-             np.int32: torch.int32,
-             np.int16: torch.int16,
-             np.int8: torch.int8,
-             np.uint8: torch.uint8}
-
-
-def set_global_seeds(seed):
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.manual_seed(seed)
-
-
-def flat_grad(*args, **kwargs):
-    return torch.cat([g.reshape((-1,)) for g in grad(*args, **kwargs)])
-
-
-def explained_variance_1d(ypred, y):
-    assert y.dim() == 1 and ypred.dim() == 1
-    vary = y.var().item()
-    if np.isclose(vary, 0):
-        if ypred.var().item() > 1e-8:
-            return 0
-        else:
-            return 1
-    return 1 - (y - ypred).var().item() / (vary + 1e-8)
-
-
-class LinearLR(_LRScheduler):
-    def __init__(self, optimizer, total_num_epochs, last_epoch=-1):
-        super().__init__(optimizer, last_epoch=last_epoch)
-        self.total_num_epochs = float(total_num_epochs)
-
-    def get_lr():
-        return [base_lr - (base_lr * (self.last_epoch / self.total_num_epochs))
-                for base_lr in self.base_lrs]
+from proj.utils.torch_util import flat_grad
 
 # ==============================
 # Hessian-free optimization util

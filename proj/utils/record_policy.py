@@ -1,3 +1,4 @@
+import os.path as osp
 import click
 import time
 import torch
@@ -8,12 +9,11 @@ from proj.utils.saver import SnapshotSaver
 
 @click.command()
 @click.argument("exp_path")
-@click.argument("vid_path")
 @click.option("--n_envs", help="Number of environments to run in parallel",
               type=int, default=1)
 @click.option("--steps", help="Number of steps to record",
               type=int, default=1000)
-def main(exp_path, vid_path, n_envs, steps):
+def main(exp_path, n_envs, steps):
     """
     Loads a snapshot and simulates the corresponding policy and environment.
     """
@@ -22,6 +22,7 @@ def main(exp_path, vid_path, n_envs, steps):
         exp_path, index = exp_path.split(':')
     else:
         index = None
+    vid_path = osp.join(exp_path, 'videos', '')
 
     snapshot = None
     saver = SnapshotSaver(exp_path)
@@ -38,10 +39,12 @@ def main(exp_path, vid_path, n_envs, steps):
     policy = config['policy'].pop('class')(vec_env, **config['policy'])
     policy.load_state_dict(state['policy'])
 
-    ob = vec_env.reset()
-    for _ in range(steps):
-        action = policy.actions(torch.from_numpy(ob))
-        ob, _, done, _ = vec_env.step(action.numpy())
+    with torch.no_grad():
+        policy.eval()
+        ob = vec_env.reset()
+        for _ in range(steps):
+            action = policy.actions(torch.from_numpy(ob))
+            ob, _, done, _ = vec_env.step(action.numpy())
 
     vec_env.close()
 

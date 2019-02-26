@@ -1,8 +1,10 @@
 # Inspired by OpenAI baselines:
 # https://github.com/openai/baselines/blob/master/baselines/common/distributions.py
-import torch, torch.nn as nn, torch.distributions as dists
+import torch
+import torch.nn as nn
+import torch.distributions as dists
 from abc import ABC, abstractmethod
-
+from proj.utils.torch_util import ExpandVector, TanhTransform, AffineTransform
 
 # ==============================
 # Distribution types
@@ -34,18 +36,25 @@ class DistributionType(ABC, nn.Module):
     def forward(self, feats):
         pass
 
+    @abstractmethod
     def from_flat(self, flat_params):
-        return self.pd_class(flat_params)
+        pass
 
+
+LOG_STD_MAX = 2
+LOG_STD_MIN = -20
 
 class DiagNormalPDType(DistributionType):
-    def __init__(self, size, in_features):
+    def __init__(self, size, in_features, *, indep_std=True):
         super().__init__()
         self.size = size
-        self.logstd = nn.Parameter(torch.zeros(size))
         self.mu = nn.Linear(in_features, size)
         nn.init.orthogonal_(self.mu.weight, gain=0.01)
         nn.init.constant_(self.mu.bias, 0)
+        if indep_std:
+            self.logstd = ExpandVector(torch.zeros(size))
+        else:
+            self.logstd = nn.Linear(in_features, size)
 
     @property
     def pd_class(self):
@@ -61,8 +70,25 @@ class DiagNormalPDType(DistributionType):
 
     def forward(self, feats):
         mu = self.mu(feats)
-        stddev = self.logstd.expand_as(mu).exp()
+        stddev = torch.clamp(self.logstd(feats), LOG_STD_MIN, LOG_STD_MAX).exp()
         return self.from_flat(torch.cat((mu, stddev), dim=-1))
+
+    def from_flat(self, flat_params):
+        return self.pd_class(flat_params)
+
+
+class ClampedDiagNormalPDType(DiagNormalPDType):
+    def __init__(self, size, in_features, *, indep_std=True, low, high):
+        super().__init__(size, in_features, indep_std=indep_std)
+        self.low = low
+        self.high = high
+
+    @property
+    def pd_class(self):
+        return ClampedDiagNormal
+
+    def from_flat(self, flat_params):
+        return ClampedDiagNormal(flat_params, self.low, self.high)
 
 
 class CategoricalPDType(DistributionType):
@@ -88,12 +114,14 @@ class CategoricalPDType(DistributionType):
     def forward(self, feats):
         return self.from_flat(self.logits(feats))
 
+    def from_flat(self, flat_params):
+        return self.pd_class(flat_params)
 
 # ==============================
 # Distributions
 # ==============================
 
-class Distribution(ABC, dists.Distribution):
+class Distribution(ABC):
     """ Probability distribution constructed from flat vectors.
 
     Extends torch.Distribution and replaces default constructor with
@@ -103,14 +131,20 @@ class Distribution(ABC, dists.Distribution):
 
     @property
     @abstractmethod
+    def mode(self):
+        pass
+
+    @property
+    @abstractmethod
     def flat_params(self):
         pass
 
+    @abstractmethod
     def detach(self):
-        return type(self)(self.flat_params.detach())
+        pass
 
 
-class DiagNormal(Distribution, dists.Independent):
+class DiagNormal(dists.Independent, Distribution):
     def __init__(self, flatparam):
         loc, scale = torch.chunk(flatparam, 2, dim=-1)
         base_distribution = dists.Normal(loc=loc, scale=scale)
@@ -118,8 +152,15 @@ class DiagNormal(Distribution, dists.Independent):
         super().__init__(base_distribution, reinterpreted_batch_ndims)
 
     @property
+    def mode(self):
+        return self.mean
+
+    @property
     def flat_params(self):
         return torch.cat((self.base_dist.loc, self.base_dist.scale), dim=-1)
+
+    def detach(self):
+        return DiagNormal(self.flat_params.detach())
 
 
 @dists.kl.register_kl(DiagNormal, DiagNormal)
@@ -131,20 +172,64 @@ def _kl_diagnormal(dist1, dist2):
     )
 
 
-class Categorical(Distribution, dists.Categorical):
+class ClampedDiagNormal(dists.TransformedDistribution, Distribution):
+    def __init__(self, flatparam, low, high):
+        base_distribution = DiagNormal(flatparam)
+        self.loc = (high+low) / 2
+        self.scale = (high-low) / 2
+        super().__init__(
+            base_distribution,
+            [
+                TanhTransform(cache_size=1),
+                AffineTransform(self.loc, self.scale, cache_size=1, event_dim=1)
+            ]
+        )
+
+    @property
+    def mean(self):
+        mu = self.base_dist.mean
+        for transform in self.transforms:
+            mu = transform(mu)
+        return mu
+
+    @property
+    def mode(self):
+        return self.mean
+
+    @property
+    def flat_params(self):
+        return self.base_dist.flat_params
+
+    def detach(self):
+        return ClampedDiagNormal(self.flat_params.detach(),
+                                 self.loc - self.scale, self.loc + self.scale)
+
+
+class Categorical(dists.Categorical, Distribution):
     def __init__(self, params):
         super().__init__(logits=params)
+
+    @property
+    def mode(self):
+        self.logits.argmax(1)
 
     @property
     def flat_params(self):
         return self.logits
 
 
-def pdtype(ac_space, in_features):
+def pdtype(ac_space, in_features, *, clamp_acts=False, indep_std=True):
     from gym import spaces
     if isinstance(ac_space, spaces.Box):
         assert len(ac_space.shape) == 1
-        return DiagNormalPDType(ac_space.shape[0], in_features)
+        if clamp_acts:
+            return ClampedDiagNormalPDType(
+                ac_space.shape[0], in_features, indep_std=indep_std,
+                low=torch.Tensor(ac_space.low),
+                high=torch.Tensor(ac_space.high))
+        else:
+            return DiagNormalPDType(
+                ac_space.shape[0], in_features, indep_std=indep_std)
     elif isinstance(ac_space, spaces.Discrete):
         return CategoricalPDType(ac_space.n, in_features)
     else:

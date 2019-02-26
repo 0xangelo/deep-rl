@@ -29,23 +29,24 @@ def main(path, index, runs, norender):
 
     config, state = snapshot
     pprint.pprint(config)
-    env = config['env_maker']()
+    env = config['env_maker'](train=False)
     policy = config['policy'].pop('class')(env, **config['policy'])
     policy.load_state_dict(state['policy'])
 
     with torch.no_grad():
+        policy.eval()
         for _ in range(runs):
             ob = env.reset()
             done = False
             while not done:
                 action = policy.actions(torch.from_numpy(ob))
-                ob, rew, done, _ = env.step(action.numpy())
+                ob, _, done, _ = env.step(action.numpy())
                 if not norender:
                     env.render()
 
+    env.close()
     log_reward_statistics(env)
     logger.dumpkvs()
-    env.close()
 
 if __name__ == "__main__":
     main()

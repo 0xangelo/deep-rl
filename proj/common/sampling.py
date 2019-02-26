@@ -1,8 +1,39 @@
 import torch
-import numpy as np
 from collections import OrderedDict
+from torch.utils.data import TensorDataset, RandomSampler, DataLoader
 from proj.utils.tqdm_util import trange
-from proj.common.utils import _NP_TO_PT
+from proj.utils.torch_util import _NP_TO_PT
+
+
+class ReplayBuffer(object):
+    def __init__(self, size, ob_space, ac_space):
+        self.all_obs1 = torch.empty(size, *ob_space.shape)
+        self.all_acts = torch.empty(size, *ac_space.shape)
+        self.all_rews = torch.empty(size)
+        self.all_obs2 = torch.empty(size, *ob_space.shape)
+        self.all_dones = torch.empty(size)
+        self.ptr, self.size, self.max_size = 0, 0, size
+
+    def store(self, ob1, act, rew, ob2, done):
+        self.all_obs1[self.ptr] = ob1
+        self.all_acts[self.ptr] = act
+        self.all_rews[self.ptr] = rew
+        self.all_obs2[self.ptr] = ob2
+        self.all_dones[self.ptr] = done
+        self.ptr = (self.ptr+1) % self.max_size
+        self.size = min(self.size + 1, self.max_size)
+
+    def sampler(self, num_mbs, mb_size):
+        dataset = TensorDataset(
+            self.all_obs1[:self.size],
+            self.all_acts[:self.size],
+            self.all_rews[:self.size],
+            self.all_obs2[:self.size],
+            self.all_dones[:self.size]
+        )
+        sampler = RandomSampler(
+            dataset, replacement=True, num_samples=num_mbs*mb_size)
+        return DataLoader(dataset, batch_size=mb_size, sampler=sampler)
 
 
 @torch.no_grad()
@@ -37,7 +68,7 @@ def parallel_samples_collector(vec_env, policy, steps):
             all_obs[step] = obs
             all_acts[step] = actions
             all_rews[step] = torch.from_numpy(rews)
-            all_dones[step] = torch.from_numpy(dones.astype(np.uint8))
+            all_dones[step] = torch.from_numpy(dones.astype('f'))
             obs = torch.from_numpy(next_obs)
 
         all_obs[-1] = obs

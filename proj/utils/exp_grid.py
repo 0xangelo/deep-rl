@@ -37,6 +37,7 @@ LOG_FMTS = 'stdout,csv'
 def all_bools(vals):
     return all([isinstance(v,bool) for v in vals])
 
+
 def valid_str(v):
     """
     Convert a value or values to a string which could go in a filepath.
@@ -77,15 +78,21 @@ def create_experiment(exp_name, thunk, seed=42, log_dir=None, format_strs=None,
     log_dir = osp.join(log_dir, relpath)
 
     def thunk_plus():
+        import torch
+        import random
+        import numpy as np
         from baselines import logger
         from proj.utils.tqdm_util import tqdm_out
 
+        np.random.seed(seed)
+        random.seed(seed)
+        torch.manual_seed(seed)
+
+        torch.set_num_threads(4)
+
         with tqdm_out(), logger.scoped_configure(log_dir, format_strs):
-            from proj.common.utils import set_global_seeds
             from proj.common.log_utils import save_config
             from proj.common.env_makers import VecEnvMaker
-
-            set_global_seeds(seed)
 
             if 'env' in kwargs:
                 kwargs['env_maker'] = VecEnvMaker(kwargs['env'])

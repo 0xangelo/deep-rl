@@ -2,12 +2,12 @@ import torch
 from torch.nn.utils import parameters_to_vector, vector_to_parameters
 from torch.distributions.kl import kl_divergence as kl
 from baselines import logger
-from proj.utils.tqdm_util import trange
 from proj.utils.saver import SnapshotSaver
+from proj.utils.tqdm_util import trange
+from proj.utils.torch_util import flat_grad
 from proj.common.models import ValueFunction
+from proj.common.hf_util import conjugate_gradient, fisher_vec_prod, line_search
 from proj.common.sampling import parallel_samples_collector, compute_pg_vars
-from proj.common.utils import conjugate_gradient, fisher_vec_prod, \
-    flat_grad, line_search
 from proj.common.log_utils import save_config, log_reward_statistics, \
     log_val_fn_statistics, log_action_distribution_statistics, \
     log_average_kl_divergence
