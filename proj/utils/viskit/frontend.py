@@ -261,14 +261,14 @@ def get_plot_instruction(
                     interpolated_progresses = []
                     for d in filtered_data:
                         if x_plot_key in d.progress:
-                            # might break if one of the experiments doesn't
-                            # log the quantity corresponding to plot_key
-                            assert plot_key in d.progress
+                            x_to_interp = d.progress[x_plot_key]
+                            y_to_interp = d.progress.get(
+                                plot_key, np.ones(len(x_to_interp)) * np.nan)
                             interpolated_progresses.append(
                                 np.interp(
                                     all_xs,
-                                    d.progress[x_plot_key],
-                                    d.progress[plot_key],
+                                    x_to_interp,
+                                    y_to_interp,
                                     right=np.nan
                                 )
                             )
@@ -280,8 +280,8 @@ def get_plot_instruction(
                     xs = all_xs
 
                 if display_mode == "mean_std":
-                    means = np.nanmean(progresses, axis=0)
-                    stds = np.nanstd(progresses, axis=0)
+                    means = np.atleast_1d(np.nanmean(progresses, axis=0))
+                    stds = np.atleast_1d(np.nanstd(progresses, axis=0))
                     to_plot.append(AttrDict(
                         means=means,
                         stds=stds,
@@ -290,9 +290,9 @@ def get_plot_instruction(
                         display_mode=display_mode,
                     ))
                 elif display_mode == "mean_se":
-                    means = np.nanmean(progresses, axis=0)
-                    ses = np.nanstd(progresses, axis=0) / \
-                        np.sqrt(np.sum(1 - np.isnan(progresses), axis=0))
+                    means = np.atleast_1d(np.nanmean(progresses, axis=0))
+                    ses = np.atleast_1d(np.nanstd(progresses, axis=0) / \
+                        np.sqrt(np.sum(1 - np.isnan(progresses), axis=0)))
                     to_plot.append(AttrDict(
                         means=means,
                         ses=ses,
