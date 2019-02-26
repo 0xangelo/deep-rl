@@ -1,10 +1,9 @@
 import os
 import gym
 import numpy as np
-import pybullet_envs
 from baselines import logger
 from baselines.common.atari_wrappers import make_atari, wrap_deepmind
-from baselines.common.vec_env.dummy_vec_env import DummyVecEnv
+from baselines.common.vec_env.dummy_vec_env import DummyVecEnv as _DummyVecEnv
 from baselines.common.vec_env.vec_frame_stack import VecFrameStack
 from baselines.common.vec_env.vec_monitor import VecMonitor
 from proj.common.env_pool import EnvPool, ShmEnvPool
@@ -56,6 +55,22 @@ class VecEnvMaker(object):
         vec_env = VecMonitor(vec_env, filename=monitor_dir)
         setattr(vec_env, 'directory', os.path.abspath(monitor_dir))
         return vec_env
+
+# ==============================
+# Reproducible DummyVecEnv
+# ==============================
+
+class DummyVecEnv(_DummyVecEnv):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # set initial seeds
+        seeds = np.random.randint(
+            low=0, high=np.iinfo(np.int32).max, size=self.num_envs)
+        self.seed(seeds)
+
+    def seed(self, seeds):
+        for env, seed in zip(self.envs, seeds):
+            env.seed(int(seed))
 
 # ==============================
 # Wrappers
