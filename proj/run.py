@@ -21,6 +21,7 @@ import os.path as osp
 import subprocess
 from textwrap import dedent
 import proj.algorithms
+from random import randint
 from proj.utils.exp_grid import ExperimentGrid
 from proj.common.models import *
 
@@ -107,7 +108,7 @@ def parse_and_execute_grid_search(cmd, args):
 if __name__ == '__main__':
     cmd = sys.argv[1]
     valid_algos = ['vanilla', 'trpo', 'a2c', 'ppo', 'acktr', 'a2c_kfac', 'ddpg',
-                   'td3']
+                   'td3', 'sac']
     valid_utils = ['plot', 'sim_policy', 'record_policy']
     valid_cmds = valid_algos + valid_utils
     assert cmd in valid_cmds, \
