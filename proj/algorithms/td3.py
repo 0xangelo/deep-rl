@@ -10,8 +10,8 @@ from proj.common.log_utils import save_config, log_reward_statistics
 
 def td3(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
         replay_size=int(1e6), polyak=0.995, start_steps=10000, epoch=5000,
-        pi_lr=1e-3, qf_lr=1e-3, mb_size=100, act_noise=0.1,
-        target_noise=0.2, noise_clip=0.5, policy_delay=2, **saver_kwargs):
+        pi_lr=1e-3, qf_lr=1e-3, mb_size=100, act_noise=0.1, target_noise=0.2,
+        noise_clip=0.5, policy_delay=2, updates_per_step=1.0, **saver_kwargs):
 
     # Set and save experiment hyperparameters
     if q_func is None:
@@ -106,8 +106,8 @@ def td3(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
         obs1 = obs2
 
         if dones[0]:
-            for ob_1, act_, rew_, ob_2, done_ in replay.sampler(
-                    samples - prev_samp, mb_size):
+            for _ in range(int((samples-prev_samp) * updates_per_step)):
+                ob_1, act_, rew_, ob_2, done_ = replay.sample(mb_size)
                 with torch.no_grad():
                     atarg = pi_targ(ob_2)
                     atarg += torch.clamp(target_noise * torch.randn_like(atarg),

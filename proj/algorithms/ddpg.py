@@ -10,7 +10,8 @@ from proj.common.log_utils import save_config, log_reward_statistics
 
 def ddpg(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
          replay_size=int(1e6), polyak=0.995, start_steps=10000, epoch=5000,
-         pi_lr=1e-3, qf_lr=1e-3, mb_size=100, act_noise=0.1, **saver_kwargs):
+         pi_lr=1e-3, qf_lr=1e-3, mb_size=100, act_noise=0.1,
+         updates_per_step=1.0, **saver_kwargs):
 
     # Set and save experiment hyperparameters
     if q_func is None:
@@ -96,31 +97,34 @@ def ddpg(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
             replay.store(ob1, act, rew, ob2, done)
         obs1 = obs2
 
-        if dones[0]:
-            for ob_1, act_, rew_, ob_2, done_ in replay.sampler(stp, mb_size):
+        if dones[0] and replay.size >= mb_size:
+            for _ in range(int(samples-prev_samp) * updates_per_step):
+                ob_1, act_, rew_, ob_2, done_ = replay.sample(mb_size)
                 with torch.no_grad():
                     targs = rew_ + gamma*(1-done_)*qf_targ(ob_2, pi_targ(ob_2))
-            qf_optim.zero_grad()
-            qf_val = q_func(ob_1, act_)
-            qf_loss = loss_fn(qf_val, targs)
-            qf_loss.backward()
-            qf_optim.step()
+                qf_optim.zero_grad()
+                qf_val = q_func(ob_1, act_)
+                qf_loss = loss_fn(qf_val, targs)
+                qf_loss.backward()
+                qf_optim.step()
 
-            pi_optim.zero_grad()
-            qpi_val = q_func(ob_1, policy(ob_1)).mean()
-            pi_loss = qpi_val.neg()
-            pi_loss.backward()
-            pi_optim.step()
+                pi_optim.zero_grad()
+                qpi_val = q_func(ob_1, policy(ob_1)).mean()
+                pi_loss = qpi_val.neg()
+                pi_loss.backward()
+                pi_optim.step()
 
-            for p, t in zip(policy.parameters(), pi_targ.parameters()):
-                t.data.mul_(polyak).add_(1 - polyak, p.data)
-            for q, t in zip(q_func.parameters(), qf_targ.parameters()):
-                t.data.mul_(polyak).add_(1 - polyak, q.data)
+                for p, t in zip(policy.parameters(), pi_targ.parameters()):
+                    t.data.mul_(polyak).add_(1 - polyak, p.data)
+                for q, t in zip(q_func.parameters(), qf_targ.parameters()):
+                    t.data.mul_(polyak).add_(1 - polyak, q.data)
 
-            logger.logkv_mean("Q1Val", qf_val.mean().item())
-            logger.logkv_mean("Q1Loss", qf_loss.item())
-            logger.logkv_mean("QPiVal", qpi_val.item())
-            logger.logkv_mean("PiLoss", pi_loss.item())
+                logger.logkv_mean("Q1Val", qf_val.mean().item())
+                logger.logkv_mean("Q1Loss", qf_loss.item())
+                logger.logkv_mean("QPiVal", qpi_val.item())
+                logger.logkv_mean("PiLoss", pi_loss.item())
+
+            prev_samp = samples
 
         if samples % epoch == 0:
             test_policy()

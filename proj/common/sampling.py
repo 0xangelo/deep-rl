@@ -1,4 +1,5 @@
 import torch
+import random
 from collections import OrderedDict
 from torch.utils.data import TensorDataset, RandomSampler, DataLoader
 from proj.utils.tqdm_util import trange
@@ -23,17 +24,10 @@ class ReplayBuffer(object):
         self.ptr = (self.ptr+1) % self.max_size
         self.size = min(self.size + 1, self.max_size)
 
-    def sampler(self, num_mbs, mb_size):
-        dataset = TensorDataset(
-            self.all_obs1[:self.size],
-            self.all_acts[:self.size],
-            self.all_rews[:self.size],
-            self.all_obs2[:self.size],
-            self.all_dones[:self.size]
-        )
-        sampler = RandomSampler(
-            dataset, replacement=True, num_samples=num_mbs*mb_size)
-        return DataLoader(dataset, batch_size=mb_size, sampler=sampler)
+    def sample(self, mb_size):
+        idxs = random.sample(range(self.size), mb_size)
+        return self.all_obs1[idxs], self.all_acts[idxs], self.all_rews[idxs], \
+            self.all_obs2[idxs], self.all_dones[idxs]
 
 
 @torch.no_grad()
