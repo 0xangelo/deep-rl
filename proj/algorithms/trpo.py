@@ -7,7 +7,8 @@ from proj.utils.tqdm_util import trange
 from proj.utils.torch_util import flat_grad
 from proj.common.models import ValueFunction
 from proj.common.hf_util import conjugate_gradient, fisher_vec_prod, line_search
-from proj.common.sampling import parallel_samples_collector, compute_pg_vars
+from proj.common.sampling import parallel_samples_collector, compute_pg_vars, \
+    flatten_trajs
 from proj.common.log_utils import save_config, log_reward_statistics, \
     log_val_fn_statistics, log_action_distribution_statistics, \
     log_average_kl_divergence
@@ -19,13 +20,12 @@ def trpo(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
 
     if val_fn is None:
         val_fn = ValueFunction.from_policy(policy)
-
     save_config(locals())
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     vec_env = env_maker(n_envs)
-    policy = policy.pop('class')(env, **policy)
-    val_fn = val_fn.pop('class')(env, **val_fn)
+    policy = policy.pop('class')(vec_env, **policy)
+    val_fn = val_fn.pop('class')(vec_env, **val_fn)
     val_optim = torch.optim.Adam(val_fn.parameters(), lr=val_lr)
     loss_fn = torch.nn.MSELoss()
 

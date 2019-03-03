@@ -217,6 +217,9 @@ class Categorical(dists.Categorical, Distribution):
     def flat_params(self):
         return self.logits
 
+    def detach(self):
+        return Categorical(self.logits.detach())
+
 
 def pdtype(ac_space, in_features, *, clamp_acts=False, indep_std=True):
     from gym import spaces
