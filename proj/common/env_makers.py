@@ -12,7 +12,7 @@ from proj.common.env_pool import EnvPool, ShmEnvPool
 class EnvMaker(object):
     def __init__(self, env_id):
         self.env_id = env_id
-        self.__name__ = env_id
+        self.__name__ = repr(self)
 
     def __call__(self):
         if 'AtariEnv' in gym.spec(self.env_id)._entry_point \
@@ -22,16 +22,19 @@ class EnvMaker(object):
         else:
             env = gym.make(self.env_id)
 
-        if len(env.observation_space.shape) == 1 and 'TimeLimit' in str(env):
-            env = AddRelativeTimestep(env)
+        # if len(env.observation_space.shape) == 1 and 'TimeLimit' in str(env):
+        #     env = AddRelativeTimestep(env)
 
         return env
+
+    def __repr__(self):
+        return "EnvMaker('{}')".format(self.env_id)
 
 
 class VecEnvMaker(object):
     def __init__(self, env_id):
         self.env_id = env_id
-        self.__name__ = env_id
+        self.__name__ = repr(self)
 
     def __call__(self, n_envs=1, *, train=True):
         env_fn = EnvMaker(self.env_id)
@@ -55,6 +58,10 @@ class VecEnvMaker(object):
         vec_env = VecMonitor(vec_env, filename=monitor_dir)
         setattr(vec_env, 'directory', os.path.abspath(monitor_dir))
         return vec_env
+
+    def __repr__(self):
+        return "VecEnvMaker('{}')".format(self.env_id)
+
 
 # ==============================
 # Reproducible DummyVecEnv
