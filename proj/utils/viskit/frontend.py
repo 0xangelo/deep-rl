@@ -208,7 +208,7 @@ def get_plot_instruction(
         split_legends = list(map(str, vs))
     else:
         split_selectors = [selector]
-        split_legends = [selector.extract()[0].params["exp_name"]]
+        split_legends = ["Experiment"]
     plots = []
     counter = 0
     for split_selector, split_legend in zip(split_selectors, split_legends):
@@ -269,6 +269,7 @@ def get_plot_instruction(
                                     all_xs,
                                     x_to_interp,
                                     y_to_interp,
+                                    left=np.nan,
                                     right=np.nan
                                 )
                             )
