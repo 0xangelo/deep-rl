@@ -21,7 +21,7 @@ import os.path as osp
 import subprocess
 from textwrap import dedent
 import proj.algorithms
-from random import randint
+from random import randrange
 from proj.utils.exp_grid import ExperimentGrid
 from proj.common.models import *
 
