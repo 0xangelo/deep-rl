@@ -72,7 +72,7 @@ def ddpg(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
 
     # Set action sampling strategies
     rand_uniform_actions = lambda _: np.stack(
-        [ac_space.sample() for _ in range(n_envs)])
+        [ac_space.sample() for _ in range(vec_env.num_envs)])
 
     @torch.no_grad()
     def noisy_policy_actions(obs):
@@ -98,7 +98,7 @@ def ddpg(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
         obs1 = obs2
 
         if dones[0] and replay.size >= mb_size:
-            for _ in range(int(samples-prev_samp) * updates_per_step):
+            for _ in range(int((samples-prev_samp) * updates_per_step)):
                 ob_1, act_, rew_, ob_2, done_ = replay.sample(mb_size)
                 with torch.no_grad():
                     targs = rew_ + gamma*(1-done_)*qf_targ(ob_2, pi_targ(ob_2))
