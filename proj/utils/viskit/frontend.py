@@ -412,7 +412,8 @@ def is_increasing_key(key, exps_data):
 
 def is_increasing(arr):
     arr = np.asarray(arr)
-    return np.all(arr[1:] - arr[:-1] >= 0) and np.max(arr) > np.min(arr)
+    return np.all(np.nansum([arr[1:],-arr[:-1]], axis=0) >= 0) \
+        and np.nanmax(arr) >= np.nanmin(arr)
 
 
 def reload_data():
