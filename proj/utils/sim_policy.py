@@ -15,7 +15,9 @@ from proj.common.log_utils import log_reward_statistics
               type=int, default=2)
 @click.option("--norender", help="Don't render the simulation on screen",
               is_flag=True)
-def main(path, index, runs, norender):
+@click.option("--deterministic", help="Use mode of the distributions if applicable",
+              is_flag=True)
+def main(path, index, runs, norender, deterministic):
     """
     Loads a snapshot and simulates the corresponding policy and environment.
     """
@@ -34,7 +36,8 @@ def main(path, index, runs, norender):
     policy.load_state_dict(state['policy'])
 
     with torch.no_grad():
-        policy.eval()
+        if deterministic:
+            policy.eval()
         for _ in range(runs):
             ob = env.reset()
             done = False
