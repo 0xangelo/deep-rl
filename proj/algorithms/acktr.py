@@ -8,9 +8,7 @@ from proj.common.models import ValueFunction
 from proj.common.hf_util import line_search
 from proj.common.sampling import parallel_samples_collector, compute_pg_vars, \
     flatten_trajs
-from proj.common.log_utils import save_config, log_reward_statistics, \
-    log_val_fn_statistics, log_action_distribution_statistics, \
-    log_average_kl_divergence
+import proj.common.log_utils as logu
 
 
 DEFAULT_PIKFAC = dict(eps=1e-3, pi=True, alpha=0.95, kl_clip=1e-2, eta=1.0)
@@ -27,7 +25,7 @@ def acktr(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
         val_fn = ValueFunction.from_policy(policy)
 
     # save config and setup state saving
-    save_config(locals())
+    logu.save_config(locals())
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     # initialize models and optimizer
@@ -127,10 +125,10 @@ def acktr(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
 
         logger.info("Logging information")
         logger.logkv('TotalNSamples', samples)
-        log_reward_statistics(vec_env)
-        log_val_fn_statistics(all_vals, all_rets)
-        log_action_distribution_statistics(old_dists)
-        log_average_kl_divergence(old_dists, policy, all_obs)
+        logu.log_reward_statistics(vec_env)
+        logu.log_val_fn_statistics(all_vals, all_rets)
+        logu.log_action_distribution_statistics(old_dists)
+        logu.log_average_kl_divergence(old_dists, policy, all_obs)
         logger.dumpkvs()
 
         logger.info("Saving snapshot")

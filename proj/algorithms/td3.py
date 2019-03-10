@@ -3,6 +3,7 @@ import numpy as np
 from baselines import logger
 from proj.utils.saver import SnapshotSaver
 from proj.utils.tqdm_util import trange
+from proj.utils.torch_util import update_polyak
 from proj.common.models import ContinuousQFunction
 from proj.common.sampling import ReplayBuffer
 from proj.common.log_utils import save_config, log_reward_statistics
@@ -38,12 +39,9 @@ def td3(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
     pi_targ = pi_class(vec_env, **pi_args)
     q1_targ = qf_class(vec_env, **qf_args)
     q2_targ = qf_class(vec_env, **qf_args)
-    for p, t in zip(policy.parameters(), pi_targ.parameters()):
-        t.detach_().copy_(p)
-    for q, t in zip(q1func.parameters(), q1_targ.parameters()):
-        t.detach_().copy_(q)
-    for q, t in zip(q2func.parameters(), q2_targ.parameters()):
-        t.detach_().copy_(q)
+    pi_targ.load_state_dict(policy.state_dict())
+    q1_targ.load_state_dict(q1func.state_dict())
+    q2_targ.load_state_dict(q2func.state_dict())
 
     # Save initial state
     saver.save_state(
@@ -105,7 +103,7 @@ def td3(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
             replay.store(ob1, act, rew, ob2, done)
         obs1 = obs2
 
-        if dones[0]:
+        if dones[0] and replay.size >= mb_size:
             for _ in range(int((samples-prev_samp) * updates_per_step)):
                 ob_1, act_, rew_, ob_2, done_ = replay.sample(mb_size)
                 with torch.no_grad():
@@ -132,12 +130,9 @@ def td3(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
                     pi_loss.backward()
                     pi_optim.step()
 
-                    for p, t in zip(policy.parameters(), pi_targ.parameters()):
-                        t.data.mul_(polyak).add_(1 - polyak, p.data)
-                    for q, t in zip(q1func.parameters(), q1_targ.parameters()):
-                        t.data.mul_(polyak).add_(1 - polyak, q.data)
-                    for q, t in zip(q2func.parameters(), q2_targ.parameters()):
-                        t.data.mul_(polyak).add_(1 - polyak, q.data)
+                    update_polyak(policy, pi_targ, polyak)
+                    update_polyak(q1func, q1_targ, polyak)
+                    update_polyak(q2func, q2_targ, polyak)
 
                     logger.logkv_mean("QPiVal", qpi_val.mean().item())
                     logger.logkv_mean("PiLoss", pi_loss.item())

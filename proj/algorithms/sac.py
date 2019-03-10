@@ -3,6 +3,7 @@ import numpy as np
 from baselines import logger
 from proj.utils.saver import SnapshotSaver
 from proj.utils.tqdm_util import trange
+from proj.utils.torch_util import update_polyak
 from proj.common.models import ContinuousQFunction, ValueFunction
 from proj.common.sampling import ReplayBuffer
 from proj.common.log_utils import save_config, log_reward_statistics
@@ -34,7 +35,7 @@ def sac(env_maker, policy, q_func=None, val_fn=None, total_samples=int(5e5),
     val_fn = vf_class(vec_env, **vf_args)
     replay = ReplayBuffer(replay_size, ob_space, ac_space)
     if target_entropy is not None:
-        log_alpha = torch.nn.Parameter(torch.zeros(1))
+        log_alpha = torch.nn.Parameter(torch.zeros([]))
         if target_entropy == 'auto':
             target_entropy = -np.prod(ac_space.shape)
 
@@ -45,8 +46,7 @@ def sac(env_maker, policy, q_func=None, val_fn=None, total_samples=int(5e5),
         list(q1func.parameters()) + list(q2func.parameters()), lr=lr)
     vf_optim = torch.optim.Adam(val_fn.parameters(), lr=lr)
     vf_targ = vf_class(vec_env, **vf_args)
-    for p, t in zip(val_fn.parameters(), vf_targ.parameters()):
-        t.detach_().copy_(p)
+    vf_targ.load_state_dict(val_fn.state_dict())
     if target_entropy is not None:
         al_optim = torch.optim.Adam([log_alpha], lr=lr)
 
@@ -152,8 +152,7 @@ def sac(env_maker, policy, q_func=None, val_fn=None, total_samples=int(5e5),
                 pi_loss.backward()
                 pi_optim.step()
 
-                for p, t in zip(val_fn.parameters(), vf_targ.parameters()):
-                    t.data.mul_(polyak).add_(1-polyak, p.data)
+                update_polyak(val_fn, vf_targ, polyak)
 
                 logger.logkv_mean("Entropy", logp.mean().neg().item())
                 logger.logkv_mean("Q1Val", q1_val.mean().item())

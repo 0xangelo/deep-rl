@@ -104,6 +104,11 @@ class ExpandVector(nn.Module):
     def forward(self, x):
         return self.vector.expand(len(x), -1)
 
+
+def update_polyak(from_module, to_module, polyak):
+    for source, target in zip(from_module.parameters(), to_module.parameters()):
+        target.data.mul_(polyak).add_(1 - polyak, source.data)
+
 # ==============================
 # Transforms
 # ==============================

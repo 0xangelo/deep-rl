@@ -7,8 +7,7 @@ from proj.utils.tqdm_util import trange
 from proj.common.models import ValueFunction
 from proj.common.sampling import parallel_samples_collector, compute_pg_vars, \
     flatten_trajs
-from proj.common.log_utils import save_config, log_reward_statistics, \
-    log_val_fn_statistics, log_action_distribution_statistics
+import proj.common.log_utils as logu
 
 
 def ppo(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
@@ -19,7 +18,7 @@ def ppo(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
     if val_fn is None:
         val_fn = ValueFunction.from_policy(policy)
 
-    save_config(locals())
+    logu.save_config(locals())
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     vec_env = env_maker(n_envs)
@@ -76,9 +75,9 @@ def ppo(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
 
         logger.info("Logging information")
         logger.logkv('TotalNSamples', samples)
-        log_reward_statistics(vec_env)
-        log_val_fn_statistics(all_vals, all_rets)
-        log_action_distribution_statistics(old_dists)
+        logu.log_reward_statistics(vec_env)
+        logu.log_val_fn_statistics(all_vals, all_rets)
+        logu.log_action_distribution_statistics(old_dists)
         logger.logkv('MeanKL', mean_kl)
         logger.dumpkvs()
 

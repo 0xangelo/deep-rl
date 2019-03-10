@@ -5,8 +5,7 @@ from proj.utils.saver import SnapshotSaver
 from proj.utils.tqdm_util import trange
 from proj.common.models import WeightSharingAC, ValueFunction
 from proj.common.sampling import samples_generator
-from proj.common.log_utils import save_config, log_reward_statistics, \
-    log_action_distribution_statistics, log_val_fn_statistics
+import proj.common.log_utils as logu
 
 
 def a2c(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
@@ -20,7 +19,7 @@ def a2c(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
     if val_fn is None and not issubclass(policy['class'], WeightSharingAC):
         val_fn = ValueFunction.from_policy(policy)
 
-    save_config(locals())
+    logu.save_config(locals())
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     vec_env = env_maker(n_envs)
@@ -67,9 +66,9 @@ def a2c(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
         if updates == 1 or updates % log_interval == 0:
             logger.logkv('Epoch', updates//log_interval + 1)
             logger.logkv('TotalNSamples', samples)
-            log_reward_statistics(vec_env)
-            log_val_fn_statistics(all_vals.flatten(), all_rets.flatten())
-            log_action_distribution_statistics(all_dists)
+            logu.log_reward_statistics(vec_env)
+            logu.log_val_fn_statistics(all_vals.flatten(), all_rets.flatten())
+            logu.log_action_distribution_statistics(all_dists)
             logger.dumpkvs()
             logger.info("Starting epoch {}".format(updates//log_interval + 2))
 

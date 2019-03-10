@@ -7,13 +7,13 @@ from proj.utils.torch_util import _NP_TO_PT
 
 
 class ReplayBuffer(object):
-    def __init__(self, size, ob_space, ac_space):
-        self.all_obs1 = torch.empty(size, *ob_space.shape)
-        self.all_acts = torch.empty(size, *ac_space.shape)
-        self.all_rews = torch.empty(size)
-        self.all_obs2 = torch.empty(size, *ob_space.shape)
-        self.all_dones = torch.empty(size)
-        self.ptr, self.size, self.max_size = 0, 0, size
+    def __init__(self, capacity, ob_space, ac_space):
+        self.all_obs1 = torch.empty(capacity, *ob_space.shape)
+        self.all_acts = torch.empty(capacity, *ac_space.shape)
+        self.all_rews = torch.empty(capacity)
+        self.all_obs2 = torch.empty(capacity, *ob_space.shape)
+        self.all_dones = torch.empty(capacity)
+        self.ptr, self.size, self.capacity = 0, 0, capacity
 
     def store(self, ob1, act, rew, ob2, done):
         self.all_obs1[self.ptr] = ob1
@@ -21,13 +21,21 @@ class ReplayBuffer(object):
         self.all_rews[self.ptr] = rew
         self.all_obs2[self.ptr] = ob2
         self.all_dones[self.ptr] = done
-        self.ptr = (self.ptr+1) % self.max_size
-        self.size = min(self.size + 1, self.max_size)
+        self.ptr = (self.ptr+1) % self.capacity
+        self.size = min(self.size + 1, self.capacity)
 
     def sample(self, mb_size):
         idxs = random.sample(range(self.size), mb_size)
         return self.all_obs1[idxs], self.all_acts[idxs], self.all_rews[idxs], \
             self.all_obs2[idxs], self.all_dones[idxs]
+
+    def state_dict(self):
+        return self.__dict__.copy()
+
+    def load_state_dict(self, state_dict):
+        assert self.capacity == state_dict['capacity'], \
+            "Trying to load state between incompatible replay buffers in size"
+        self.__dict__.update(state_dict)
 
 
 @torch.no_grad()

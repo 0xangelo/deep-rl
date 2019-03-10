@@ -3,15 +3,26 @@ import numpy as np
 from baselines import logger
 from proj.utils.saver import SnapshotSaver
 from proj.utils.tqdm_util import trange
+from proj.utils.torch_util import update_polyak
 from proj.common.models import ContinuousQFunction
 from proj.common.sampling import ReplayBuffer
 from proj.common.log_utils import save_config, log_reward_statistics
 
 
+def load_state_dicts(namespace, state):
+    from inspect import ismethod
+    for key, val in state.items():
+        if key in namespace:
+            if ismethod(getattr(namespace[key], 'load_state_dict', None)):
+                namespace[key].load_state_dict(val)
+            elif isinstance(val, torch.Tensor):
+                namespace[key].data.copy_(val)
+
+
 def sac2(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
          replay_size=int(1e6), polyak=0.995, start_steps=10000, epoch=5000,
          mb_size=100, lr=1e-3, alpha=0.2, target_entropy=None, reward_scale=1.0,
-         updates_per_step=1.0, **saver_kwargs):
+         updates_per_step=1.0, load_from=None, **saver_kwargs):
 
     # Set and save experiment hyperparameters
     if q_func is None:
@@ -30,7 +41,7 @@ def sac2(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
     q2func = qf_class(vec_env, **qf_args)
     replay = ReplayBuffer(replay_size, ob_space, ac_space)
     if target_entropy is not None:
-        log_alpha = torch.nn.Parameter(torch.zeros(1))
+        log_alpha = torch.nn.Parameter(torch.zeros([]))
         if target_entropy == 'auto':
             target_entropy = -np.prod(ac_space.shape)
 
@@ -41,28 +52,34 @@ def sac2(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
         list(q1func.parameters()) + list(q2func.parameters()), lr=lr)
     q1_targ = qf_class(vec_env, **qf_args)
     q2_targ = qf_class(vec_env, **qf_args)
-    for q, t in zip(q1func.parameters(), q1_targ.parameters()):
-        t.detach_().copy_(q)
-    for q, t in zip(q2func.parameters(), q2_targ.parameters()):
-        t.detach_().copy_(q)
+    q1_targ.load_state_dict(q1func.state_dict())
+    q2_targ.load_state_dict(q2func.state_dict())
     if target_entropy is not None:
         al_optim = torch.optim.Adam([log_alpha], lr=lr)
 
-    # Save initial state
-    state = dict(
-        alg=dict(samples=0),
-        policy=policy.state_dict(),
-        q1func=q1func.state_dict(),
-        q2func=q2func.state_dict(),
-        pi_optim=pi_optim.state_dict(),
-        qf_optim=qf_optim.state_dict(),
-        q1_targ=q1_targ.state_dict(),
-        q2_targ=q2_targ.state_dict()
-    )
-    if target_entropy is not None:
-        state['log_alpha'] = log_alpha
-        state['al_optim'] = al_optim.state_dict()
-    saver.save_state(0, state)
+    # Save or load initial state
+    if load_from is not None:
+        p, idx = load_from.split(':') if ':' in load_from else (load_from, None)
+        _, state = SnapshotSaver(p).get_state(idx)
+        load_state_dicts(locals(), state)
+        beg = state['alg']['samples']
+    else:
+        beg = 0
+        state = dict(
+            alg=dict(samples=beg),
+            policy=policy.state_dict(),
+            q1func=q1func.state_dict(),
+            q2func=q2func.state_dict(),
+            pi_optim=pi_optim.state_dict(),
+            qf_optim=qf_optim.state_dict(),
+            q1_targ=q1_targ.state_dict(),
+            q2_targ=q2_targ.state_dict(),
+            replay=replay.state_dict()
+        )
+        if target_entropy is not None:
+            state['log_alpha'] = log_alpha
+            state['al_optim'] = al_optim.state_dict()
+        saver.save_state(0, state)
 
     # Setup and run policy tests
     ob, don = test_env.reset(), False
@@ -78,8 +95,8 @@ def sac2(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
         policy.train()
         log_reward_statistics(test_env, num_last_eps=10, prefix='Test')
     test_policy()
-    logger.logkv("Epoch", 0)
-    logger.logkv("TotalNSamples", 0)
+    logger.logkv("Epoch", beg // epoch)
+    logger.logkv("TotalNSamples", beg)
     log_reward_statistics(vec_env)
     logger.dumpkvs()
 
@@ -93,8 +110,8 @@ def sac2(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
 
     # Algorithm main loop
     obs1 = vec_env.reset()
-    prev_samp = 0
-    for samples in trange(1, total_samples + 1, desc="Training", unit="step"):
+    prev_samp = beg
+    for samples in trange(beg+1, total_samples+1, desc="Training", unit="step"):
         if samples <= start_steps:
             actions = rand_uniform_actions
         else:
@@ -108,8 +125,8 @@ def sac2(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
             replay.store(ob1, act, rew, ob2, done)
         obs1 = obs2
 
-        if dones[0] and replay.size >= mb_size:
-            for _ in range(int((samples-prev_samp) * updates_per_step)):
+        if replay.size >= mb_size:
+            for _ in range(int(updates_per_step)):
                 ob_1, ac_1, rew_, ob_2, done_ = replay.sample(mb_size)
                 dist = policy(ob_1)
                 pi_a = dist.rsample()
@@ -143,10 +160,8 @@ def sac2(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
                 pi_loss.backward()
                 pi_optim.step()
 
-                for q, t in zip(q1func.parameters(), q1_targ.parameters()):
-                    t.data.mul_(polyak).add_(1 - polyak, q.data)
-                for q, t in zip(q2func.parameters(), q2_targ.parameters()):
-                    t.data.mul_(polyak).add_(1 - polyak, q.data)
+                update_polyak(q1func, q1_targ, polyak)
+                update_polyak(q2func, q2_targ, polyak)
 
                 logger.logkv_mean("Entropy", logp.mean().neg().item())
                 logger.logkv_mean("Q1Val", q1_val.mean().item())
@@ -174,9 +189,10 @@ def sac2(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
                 pi_optim=pi_optim.state_dict(),
                 qf_optim=qf_optim.state_dict(),
                 q1_targ=q1_targ.state_dict(),
-                q2_targ=q2_targ.state_dict()
+                q2_targ=q2_targ.state_dict(),
+                replay=replay.state_dict()
             )
             if target_entropy is not None:
-                state['log_alpha'] = log_alpha
+                state['log_alpha'] = log_alpha.data
                 state['al_optim'] = al_optim.state_dict()
             saver.save_state(samples // epoch, state)

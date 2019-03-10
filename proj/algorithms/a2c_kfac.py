@@ -6,8 +6,7 @@ from proj.utils.saver import SnapshotSaver
 from proj.utils.tqdm_util import trange
 from proj.utils.torch_util import _NP_TO_PT, LinearLR
 from proj.common.models import WeightSharingAC, ValueFunction
-from proj.common.log_utils import save_config, log_reward_statistics, \
-    log_action_distribution_statistics, log_val_fn_statistics
+import proj.common.log_utils as logu
 
 
 def a2c_kfac(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
@@ -23,7 +22,7 @@ def a2c_kfac(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
         val_fn = ValueFunction.from_policy(policy)
 
     # save config and setup state saving
-    save_config(locals())
+    logu.save_config(locals())
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     # initialize models and optimizer
@@ -122,9 +121,9 @@ def a2c_kfac(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
         if updates == 1 or updates % log_interval == 0:
             logger.logkv('Epoch', updates//log_interval + 1)
             logger.logkv('TotalNSamples', samples)
-            log_reward_statistics(vec_env)
-            log_val_fn_statistics(all_vals, all_rets)
-            log_action_distribution_statistics(all_dists)
+            logu.log_reward_statistics(vec_env)
+            logu.log_val_fn_statistics(all_vals, all_rets)
+            logu.log_action_distribution_statistics(all_dists)
             logger.dumpkvs()
             logger.info("Starting epoch {}".format(updates//log_interval + 2))
 
