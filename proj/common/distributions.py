@@ -174,16 +174,12 @@ def _kl_diagnormal(dist1, dist2):
 
 class ClampedDiagNormal(dists.TransformedDistribution, Distribution):
     def __init__(self, flatparam, low, high):
-        base_distribution = DiagNormal(flatparam)
-        self.loc = (high+low) / 2
-        self.scale = (high-low) / 2
-        super().__init__(
-            base_distribution,
-            [
-                TanhTransform(cache_size=1),
-                AffineTransform(self.loc, self.scale, cache_size=1, event_dim=1)
-            ]
-        )
+        self.low = low
+        self.high = high
+        squash = TanhTransform(cache_size=1)
+        shift = AffineTransform(
+            (high+low) / 2, (high-low) / 2, cache_size=1, event_dim=1)
+        super().__init__(DiagNormal(flatparam), [squash, shift])
 
     @property
     def mean(self):
@@ -201,8 +197,7 @@ class ClampedDiagNormal(dists.TransformedDistribution, Distribution):
         return self.base_dist.flat_params
 
     def detach(self):
-        return ClampedDiagNormal(self.flat_params.detach(),
-                                 self.loc - self.scale, self.loc + self.scale)
+        return ClampedDiagNormal(self.flat_params.detach(), self.low, self.high)
 
 
 class Categorical(dists.Categorical, Distribution):

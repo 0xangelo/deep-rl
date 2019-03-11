@@ -4,7 +4,7 @@ import os.path
 import numpy as np
 from baselines import logger
 from baselines.bench.monitor import load_results
-from torch.distributions.kl import kl_divergence as kl
+from torch.distributions.kl import kl_divergence
 from proj.utils.json_util import convert_json
 from proj.utils.torch_util import explained_variance_1d
 from proj.common.distributions import Categorical, DiagNormal
@@ -76,4 +76,4 @@ def log_action_distribution_statistics(dists):
 
 @torch.no_grad()
 def log_average_kl_divergence(old_dists, policy, obs):
-    logger.logkv('MeanKL', kl(old_dists, policy(obs)).mean().item())
+    logger.logkv('MeanKL', kl_divergence(old_dists, policy(obs)).mean().item())
