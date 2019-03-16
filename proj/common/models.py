@@ -45,7 +45,7 @@ class FeedForwardModel(ABC):
 
 
 class MlpModel(Model, FeedForwardModel):
-    def __init__(self, env, *, hidden_sizes=[32, 32], activation=nn.Tanh,
+    def __init__(self, env, *, hidden_sizes=[32, 32], activation='tanh',
                  **kwargs):
         super().__init__(env, **kwargs)
         if isinstance(activation, str):
@@ -254,8 +254,13 @@ class ValueFunction(ABC):
 
 
 class ZeroValueFunction(Model, ValueFunction):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.dummy = nn.Parameter(torch.zeros([]))
+
     def forward(self, obs):
-        return torch.zeros(len(obs.reshape(-1, *self.ob_space.shape)))
+        batch_dims = obs.shape[:len(obs.shape) - len(self.ob_space.shape)]
+        return torch.zeros(batch_dims, requires_grad=True)
 
 
 class FeedForwardValueFunction(FeedForwardModel, ValueFunction):
