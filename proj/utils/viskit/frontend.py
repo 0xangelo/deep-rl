@@ -167,7 +167,7 @@ def make_plot(plot_list, title=None, xtitle=None, ytitle=None):
         )
     )
     fig = go.Figure(data=data, layout=layout)
-    fig_div = po.plot(fig, output_type='div', include_plotlyjs=False)
+    fig_div = po.plot(fig, output_type='div', include_plotlyjs=True)
     if "footnote" in plot_list[0]:
         footnote = "<br />".join([
             r"<span><b>%s</b></span>: <span>%s</span>" % (
@@ -347,7 +347,7 @@ def plot_div():
     if len(group_key) == 0:
         group_key = None
 
-    print(reload_s3, type(reload_s3))
+    # print(reload_s3, type(reload_s3))
 
     if reload_s3:
         project_root = os.path.abspath(
@@ -416,12 +416,12 @@ def is_increasing(arr):
         and np.nanmax(arr) >= np.nanmin(arr)
 
 
-def reload_data():
+def reload_data(verbose=False):
     global exps_data
     global plottable_keys
     global distinct_params
     global x_plottable_keys
-    exps_data = core.load_exps_data(data_paths)
+    exps_data = core.load_exps_data(data_paths, verbose=verbose)
     plottable_keys = sorted(list(
         set(flatten(list(exp.progress.keys()) for exp in exps_data))))
     distinct_params = sorted(core.extract_distinct_params(exps_data))
@@ -435,12 +435,13 @@ if __name__ == "__main__":
     parser.add_argument("data_paths", type=str, nargs='*')
     parser.add_argument("--debug", action="store_true", default=False)
     parser.add_argument("--port", type=int, default=default_port)
+    parser.add_argument("-v", "--verbose", action="store_true", default=False)
     args = parser.parse_args(sys.argv[1:])
 
     data_paths = args.data_paths
 
     print("Importing data from {path}...".format(path=args.data_paths))
-    reload_data()
+    reload_data(verbose=args.verbose)
     url = "http://localhost:%d" % (args.port)
     print("Done! View %s in your browser" % (url))
 
