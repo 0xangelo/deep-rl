@@ -9,9 +9,9 @@ from proj.common.sampling import ReplayBuffer
 from proj.common.log_utils import save_config, log_reward_statistics
 
 
-def ddpg(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
+def ddpg(env_maker, policy, q_func=None, total_steps=int(5e5), gamma=0.99,
          replay_size=int(1e6), polyak=0.995, start_steps=10000, epoch=5000,
-         pi_lr=1e-3, qf_lr=1e-3, mb_size=100, act_noise=0.1,
+         pi_lr=1e-3, qf_lr=1e-3, mb_size=100, act_noise=0.1, max_ep_length=1000,
          updates_per_step=1.0, **saver_kwargs):
 
     # Set and save experiment hyperparameters
@@ -80,9 +80,8 @@ def ddpg(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
         return np.clip(acts.numpy(), ac_space.low, ac_space.high)
 
     # Algorithm main loop
-    obs1 = vec_env.reset()
-    prev_samp = 0
-    for samples in trange(1, total_samples + 1, desc="Training", unit="iter"):
+    obs1, ep_length = vec_env.reset(), 0
+    for samples in trange(1, total_steps + 1, desc="Training", unit="iter"):
         if samples <= start_steps:
             actions = rand_uniform_actions
         else:
@@ -90,14 +89,17 @@ def ddpg(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
 
         acts = actions(obs1)
         obs2, rews, dones, _ = vec_env.step(acts)
+        ep_length += 1
+        dones[0] = False if ep_length == max_ep_length else dones[0]
+
         as_tensors = map(
             torch.from_numpy, (obs1, acts, rews, obs2, dones.astype('f')))
         for ob1, act, rew, ob2, done in zip(*as_tensors):
             replay.store(ob1, act, rew, ob2, done)
         obs1 = obs2
 
-        if dones[0] and replay.size >= mb_size:
-            for _ in range(int((samples-prev_samp) * updates_per_step)):
+        if (dones[0] or ep_length == max_ep_length) and replay.size >= mb_size:
+            for _ in range(int(ep_length * updates_per_step)):
                 ob_1, act_, rew_, ob_2, done_ = replay.sample(mb_size)
                 with torch.no_grad():
                     targs = rew_ + gamma*(1-done_)*qf_targ(ob_2, pi_targ(ob_2))
@@ -121,7 +123,7 @@ def ddpg(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
                 logger.logkv_mean("QPiVal", qpi_val.item())
                 logger.logkv_mean("PiLoss", pi_loss.item())
 
-            prev_samp = samples
+            ep_length = 0
 
         if samples % epoch == 0:
             test_policy()

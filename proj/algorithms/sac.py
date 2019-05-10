@@ -9,10 +9,11 @@ from proj.common.sampling import ReplayBuffer
 from proj.common.log_utils import save_config, log_reward_statistics
 
 
-def sac(env_maker, policy, q_func=None, val_fn=None, total_samples=int(5e5),
+def sac(env_maker, policy, q_func=None, val_fn=None, total_steps=int(5e5),
         gamma=0.99, replay_size=int(1e6), polyak=0.995, start_steps=10000,
         epoch=5000, mb_size=100, lr=1e-3, alpha=0.2, target_entropy=None,
-        reward_scale=1.0, updates_per_step=1.0, **saver_kwargs):
+        reward_scale=1.0, updates_per_step=1.0, max_ep_length=1000,
+        **saver_kwargs):
 
     # Set and save experiment hyperparameters
     if q_func is None:
@@ -95,9 +96,8 @@ def sac(env_maker, policy, q_func=None, val_fn=None, total_samples=int(5e5),
         return policy.actions(torch.from_numpy(obs)).numpy()
 
     # Algorithm main loop
-    obs1 = vec_env.reset()
-    prev_samp = 0
-    for samples in trange(1, total_samples + 1, desc="Training", unit="step"):
+    obs1, ep_length = vec_env.reset(), 0
+    for samples in trange(1, total_steps + 1, desc="Training", unit="step"):
         if samples <= start_steps:
             actions = rand_uniform_actions
         else:
@@ -105,14 +105,17 @@ def sac(env_maker, policy, q_func=None, val_fn=None, total_samples=int(5e5),
 
         acts = actions(obs1)
         obs2, rews, dones, _ = vec_env.step(acts)
+        ep_length += 1
+        dones[0] = False if ep_length == max_ep_length else dones[0]
+
         as_tensors = map(
             torch.from_numpy, (obs1, acts, rews, obs2, dones.astype('f')))
         for ob1, act, rew, ob2, done in zip(*as_tensors):
             replay.store(ob1, act, rew, ob2, done)
         obs1 = obs2
 
-        if dones[0] and replay.size >= mb_size:
-            for _ in range(int((samples-prev_samp) * updates_per_step)):
+        if (dones[0] or ep_length == max_ep_length) and replay.size >= mb_size:
+            for _ in range(int(ep_length * updates_per_step)):
                 ob_1, act_, rew_, ob_2, done_ = replay.sample(mb_size)
                 dist = policy(ob_1)
                 pi_a = dist.rsample()
@@ -165,7 +168,7 @@ def sac(env_maker, policy, q_func=None, val_fn=None, total_samples=int(5e5),
                 logger.logkv_mean("PiLoss", pi_loss.item())
                 logger.logkv_mean("Alpha", alpha)
 
-            prev_samp = samples
+            ep_length = 0
 
         if samples % epoch == 0:
             test_policy()

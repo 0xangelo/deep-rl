@@ -9,10 +9,11 @@ from proj.common.sampling import ReplayBuffer
 from proj.common.log_utils import save_config, log_reward_statistics
 
 
-def td3(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
+def td3(env_maker, policy, q_func=None, total_steps=int(5e5), gamma=0.99,
         replay_size=int(1e6), polyak=0.995, start_steps=10000, epoch=5000,
-        pi_lr=1e-3, qf_lr=1e-3, mb_size=100, act_noise=0.1, target_noise=0.2,
-        noise_clip=0.5, policy_delay=2, updates_per_step=1.0, **saver_kwargs):
+        pi_lr=1e-3, qf_lr=1e-3, mb_size=100, act_noise=0.1, max_ep_length=1000,
+        target_noise=0.2, noise_clip=0.5, policy_delay=2,
+        updates_per_step=1.0, **saver_kwargs):
 
     # Set and save experiment hyperparameters
     if q_func is None:
@@ -87,9 +88,8 @@ def td3(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
         return torch.max(torch.min(acts, act_high), act_low).numpy()
 
     # Algorithm main loop
-    obs1 = vec_env.reset()
-    critic_updates, prev_samp = 0, 0
-    for samples in trange(1, total_samples + 1, desc="Training", unit="step"):
+    obs1, ep_length, critic_updates = vec_env.reset(), 0, 0
+    for samples in trange(1, total_steps + 1, desc="Training", unit="step"):
         if samples <= start_steps:
             actions = rand_uniform_actions
         else:
@@ -97,14 +97,17 @@ def td3(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
 
         acts = actions(obs1)
         obs2, rews, dones, _ = vec_env.step(acts)
+        ep_length += 1
+        dones[0] = False if ep_length == max_ep_length else dones[0]
+
         as_tensors = map(
             torch.from_numpy, (obs1, acts, rews, obs2, dones.astype('f')))
         for ob1, act, rew, ob2, done in zip(*as_tensors):
             replay.store(ob1, act, rew, ob2, done)
         obs1 = obs2
 
-        if dones[0] and replay.size >= mb_size:
-            for _ in range(int((samples-prev_samp) * updates_per_step)):
+        if (dones[0] or ep_length == max_ep_length) and replay.size >= mb_size:
+            for _ in range(int(ep_length * updates_per_step)):
                 ob_1, act_, rew_, ob_2, done_ = replay.sample(mb_size)
                 with torch.no_grad():
                     atarg = pi_targ(ob_2)
@@ -142,7 +145,7 @@ def td3(env_maker, policy, q_func=None, total_samples=int(5e5), gamma=0.99,
                 logger.logkv_mean("Q1Loss", q1_loss.item())
                 logger.logkv_mean("Q2Loss", q2_loss.item())
 
-            prev_samp = samples
+            ep_length = 0
 
         if samples % epoch == 0:
             test_policy()
