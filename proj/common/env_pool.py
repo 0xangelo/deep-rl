@@ -48,7 +48,7 @@ class EnvPool(VecEnv):
     """
 
     def __init__(self, env_maker, n_envs=mp.cpu_count(),
-                 n_parallel=mp.cpu_count()):
+                 n_parallel=mp.cpu_count() / 2):
         # No point in having more parallel workers than environments
         self.n_parallel = n_envs if n_parallel > n_envs else n_parallel
         # try to split evenly, but this isn't always possible
@@ -181,7 +181,7 @@ def shm_worker(env_maker, conn, n_envs, obs_bufs, obs_shape, obs_dtype):
 
 class ShmEnvPool(VecEnv):
     def __init__(self, env_maker, n_envs=mp.cpu_count(),
-                 n_parallel=mp.cpu_count()):
+                 n_parallel=mp.cpu_count() / 2):
         dummy = env_maker()
         ob_space, ac_space = dummy.observation_space, dummy.action_space
         del dummy

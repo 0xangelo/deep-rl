@@ -22,8 +22,8 @@ class EnvMaker(object):
         else:
             env = gym.make(self.env_id)
 
-        # if len(env.observation_space.shape) == 1 and 'TimeLimit' in str(env):
-        #     env = AddRelativeTimestep(env)
+        if len(env.observation_space.shape) == 1 and 'TimeLimit' in str(env):
+            env = AddRelativeTimestep(env)
 
         return env
 
@@ -99,10 +99,11 @@ class AddRelativeTimestep(gym.ObservationWrapper):
     def __init__(self, env=None):
         super().__init__(env)
         self.observation_space = gym.spaces.Box(
-            low=np.append(self.observation_space.low, 0.),
+            low=np.append(self.observation_space.low, -1.),
             high=np.append(self.observation_space.high, 1.),
             dtype=self.observation_space.dtype)
 
     def observation(self, observation):
         return np.append(
-            observation, self.env._elapsed_steps / self.spec.timestep_limit)
+            observation,
+            -1 + (self.env._elapsed_steps / self.spec.timestep_limit)*2)
