@@ -7,9 +7,10 @@ from proj.utils.torch_util import update_polyak
 from proj.common.models import ContinuousQFunction, ValueFunction
 from proj.common.sampling import ReplayBuffer
 from proj.common.log_utils import save_config, log_reward_statistics
+from proj.common.env_makers import VecEnvMaker
 
 
-def sac(env_maker, policy, q_func=None, val_fn=None, total_steps=int(5e5),
+def sac(env, policy, q_func=None, val_fn=None, total_steps=int(5e5),
         gamma=0.99, replay_size=int(1e6), polyak=0.995, start_steps=10000,
         epoch=5000, mb_size=100, lr=1e-3, alpha=0.2, target_entropy=None,
         reward_scale=1.0, updates_per_step=1.0, max_ep_length=1000,
@@ -24,8 +25,8 @@ def sac(env_maker, policy, q_func=None, val_fn=None, total_steps=int(5e5),
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     # Initialize environments, models and replay buffer
-    vec_env = env_maker()
-    test_env = env_maker(train=False)
+    vec_env = VecEnvMaker(env)()
+    test_env = VecEnvMaker(env)(train=False)
     ob_space, ac_space = vec_env.observation_space, vec_env.action_space
     pi_class, pi_args = policy.pop('class'), policy
     qf_class, qf_args = q_func.pop('class'), q_func

@@ -92,14 +92,14 @@ def create_experiment(exp_name, thunk, seed=42, log_dir=None, format_strs=None,
 
         with tqdm_out(), logger.scoped_configure(log_dir, format_strs):
             from proj.common.log_utils import save_config
-            from proj.common.env_makers import VecEnvMaker
+            # from proj.common.env_makers import VecEnvMaker
 
-            if 'env' in kwargs:
-                kwargs['env_maker'] = VecEnvMaker(kwargs['env'])
-                del kwargs['env']
+            # if 'env' in kwargs:
+            #     kwargs['env_maker'] = VecEnvMaker(kwargs['env'])
+            #     del kwargs['env']
 
             logger.set_level(logger.WARN)
-            save_config({'exp_name': exp_name})
+            save_config({'exp_name': exp_name, 'alg': thunk})
             thunk(**kwargs)
 
     return thunk_plus

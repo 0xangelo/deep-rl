@@ -7,10 +7,11 @@ from proj.utils.tqdm_util import trange
 from proj.common.models import ValueFunction
 from proj.common.sampling import parallel_samples_collector, compute_pg_vars, \
     flatten_trajs
+from proj.common.env_makers import VecEnvMaker
 import proj.common.log_utils as logu
 
 
-def ppo(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
+def ppo(env, policy, val_fn=None, total_steps=int(1e6), steps=125,
         n_envs=16, gamma=0.99, gaelam=0.96, clip_ratio=0.2, pol_iters=80,
         val_iters=80, pol_lr=3e-4, val_lr=1e-3, target_kl=0.01, mb_size=32,
         **saver_kwargs):
@@ -21,7 +22,7 @@ def ppo(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
     logu.save_config(locals())
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
-    vec_env = env_maker(n_envs)
+    vec_env = VecEnvMaker(env)(n_envs)
     policy = policy.pop('class')(vec_env, **policy)
     val_fn = val_fn.pop('class')(vec_env, **val_fn)
     pol_optim = torch.optim.Adam(policy.parameters(), lr=pol_lr)
@@ -30,7 +31,7 @@ def ppo(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
 
     # Algorithm main loop
     collector = parallel_samples_collector(vec_env, policy, steps)
-    beg, end, stp = steps * n_envs, total_samples + steps*n_envs, steps * n_envs
+    beg, end, stp = steps * n_envs, total_steps + steps*n_envs, steps * n_envs
     for samples in trange(beg, end, stp, desc="Training", unit="step"):
         logger.info("Starting iteration {}".format(samples // stp))
         logger.logkv("Iteration", samples // stp)

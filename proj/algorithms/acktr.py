@@ -8,13 +8,14 @@ from proj.common.models import ValueFunction
 from proj.common.hf_util import line_search
 from proj.common.sampling import parallel_samples_collector, compute_pg_vars, \
     flatten_trajs
+from proj.common.env_makers import VecEnvMaker
 import proj.common.log_utils as logu
 
 
 DEFAULT_PIKFAC = dict(eps=1e-3, pi=True, alpha=0.95, kl_clip=1e-2, eta=1.0)
 DEFAULT_VFKFAC = dict(eps=1e-3, pi=True, alpha=0.95, kl_clip=1e-2, eta=1.0)
 
-def acktr(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
+def acktr(env, policy, val_fn=None, total_steps=int(1e6), steps=125,
           n_envs=16, gamma=0.99, gaelam=0.96, val_iters=20, pikfac={},
           vfkfac={}, warm_start=None, linesearch=True, **saver_kwargs):
 
@@ -29,7 +30,7 @@ def acktr(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     # initialize models and optimizer
-    vec_env = env_maker(n_envs)
+    vec_env = VecEnvMaker(env)(n_envs)
     policy = policy.pop('class')(vec_env, **policy)
     val_fn = val_fn.pop('class')(vec_env, **val_fn)
     pol_optim = KFACOptimizer(policy, **pikfac)
@@ -54,7 +55,7 @@ def acktr(env_maker, policy, val_fn=None, total_samples=int(1e6), steps=125,
 
     # Algorithm main loop
     collector = parallel_samples_collector(vec_env, policy, steps)
-    beg, end, stp = steps * n_envs, total_samples + steps*n_envs, steps * n_envs
+    beg, end, stp = steps * n_envs, total_steps + steps*n_envs, steps * n_envs
     for samples in trange(beg, end, stp, desc="Training", unit="step"):
         logger.info("Starting iteration {}".format(samples // stp))
         logger.logkv("Iteration", samples // stp)

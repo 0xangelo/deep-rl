@@ -6,10 +6,11 @@ from proj.utils.saver import SnapshotSaver
 from proj.utils.tqdm_util import trange
 from proj.utils.torch_util import _NP_TO_PT, LinearLR
 from proj.common.models import WeightSharingAC, ValueFunction
+from proj.common.env_makers import VecEnvMaker
 import proj.common.log_utils as logu
 
 
-def a2c_kfac(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
+def a2c_kfac(env, policy, val_fn=None, total_steps=int(1e7), steps=20,
              n_envs=16, kfac={}, ent_coeff=0.01, vf_loss_coeff=0.5, gamma=0.99,
              log_interval=100, warm_start=None, **saver_kwargs):
     assert val_fn is None or not issubclass(policy['class'], WeightSharingAC), \
@@ -26,14 +27,14 @@ def a2c_kfac(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
     # initialize models and optimizer
-    vec_env = env_maker(n_envs)
+    vec_env = VecEnvMaker(env)(n_envs)
     policy = policy.pop('class')(vec_env, **policy)
     module_list = torch.nn.ModuleList(policy.modules())
     if val_fn is not None:
         val_fn = val_fn.pop('class')(vec_env, **val_fn)
         module_list.extend(val_fn.modules())
     optimizer = KFACOptimizer(module_list, **kfac)
-    # scheduler = LinearLR(optimizer, total_samples // (steps*n_envs))
+    # scheduler = LinearLR(optimizer, total_steps // (steps*n_envs))
     loss_fn = torch.nn.MSELoss()
 
     # load state if provided
@@ -62,8 +63,8 @@ def a2c_kfac(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
     with torch.no_grad():
         acts = policy.actions(obs)
     logger.info("Starting epoch {}".format(1))
-    beg, end, stp = steps * n_envs, total_samples + steps*n_envs, steps * n_envs
-    total_updates = total_samples // stp
+    beg, end, stp = steps * n_envs, total_steps + steps*n_envs, steps * n_envs
+    total_updates = total_steps // stp
     for samples in trange(beg, end, stp, desc="Training", unit="step"):
         all_obs = torch.empty((steps, n_envs) + ob_space.shape,
                               dtype=_NP_TO_PT[ob_space.dtype.type])

@@ -1,4 +1,5 @@
 from .vanilla import vanilla
+from .natural import natural
 from .trpo import trpo
 from .a2c import a2c
 from .ppo import ppo

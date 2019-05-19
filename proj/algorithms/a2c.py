@@ -5,10 +5,11 @@ from proj.utils.saver import SnapshotSaver
 from proj.utils.tqdm_util import trange
 from proj.common.models import WeightSharingAC, ValueFunction
 from proj.common.sampling import samples_generator
+from proj.common.env_makers import VecEnvMaker
 import proj.common.log_utils as logu
 
 
-def a2c(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
+def a2c(env, policy, val_fn=None, total_steps=int(1e7), steps=20,
         n_envs=16, gamma=0.99, optimizer={}, max_grad_norm=0.5, ent_coeff=0.01,
         vf_loss_coeff=0.5, log_interval=100, **saver_kwargs):
     assert val_fn is None or not issubclass(policy['class'], WeightSharingAC), \
@@ -22,7 +23,7 @@ def a2c(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
     logu.save_config(locals())
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
-    vec_env = env_maker(n_envs)
+    vec_env = VecEnvMaker(env)(n_envs)
     policy = policy.pop('class')(vec_env, **policy)
     param_list = torch.nn.ParameterList(policy.parameters())
     if val_fn is not None:
@@ -38,7 +39,7 @@ def a2c(env_maker, policy, val_fn=None, total_samples=int(10e6), steps=20,
         compute_dists_vals = lambda obs: policy(obs), val_fn(obs)
     generator = samples_generator(vec_env, policy, steps, compute_dists_vals)
     logger.info("Starting epoch {}".format(1))
-    beg, end, stp = steps * n_envs, total_samples + steps*n_envs, steps * n_envs
+    beg, end, stp = steps * n_envs, total_steps + steps*n_envs, steps * n_envs
     for samples in trange(beg, end, stp, desc="Training", unit="step"):
         all_acts, all_rews, all_dones, all_dists, all_vals, next_vals \
             = next(generator)

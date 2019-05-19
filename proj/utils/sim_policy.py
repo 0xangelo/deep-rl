@@ -5,6 +5,7 @@ import pprint
 from baselines import logger
 from proj.utils.saver import SnapshotSaver
 from proj.common.log_utils import log_reward_statistics
+from proj.common.env_makers import VecEnvMaker
 
 
 @click.command()
@@ -31,7 +32,7 @@ def main(path, index, runs, norender, deterministic):
 
     config, state = snapshot
     pprint.pprint(config)
-    env = config['env_maker'](train=False)
+    env = VecEnvMaker(config['env'])(train=False)
     policy = config['policy'].pop('class')(env, **config['policy'])
     policy.load_state_dict(state['policy'])
 
