@@ -206,7 +206,7 @@ class Categorical(dists.Categorical, Distribution):
 
     @property
     def mode(self):
-        self.logits.argmax(1)
+        return self.logits.argmax(1)
 
     @property
     def flat_params(self):
