@@ -45,7 +45,7 @@ class FeedForwardModel(ABC):
 
 
 class MlpModel(Model, FeedForwardModel):
-    def __init__(self, env, *, hidden_sizes=[32, 32], activation='tanh',
+    def __init__(self, env, *, hidden_sizes=[32, 32], activation='elu',
                  **kwargs):
         super().__init__(env, **kwargs)
         if isinstance(activation, str):
