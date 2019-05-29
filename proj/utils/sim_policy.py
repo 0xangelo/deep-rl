@@ -18,7 +18,9 @@ from proj.common.env_makers import VecEnvMaker
               is_flag=True)
 @click.option("--deterministic", help="Use mode of the distributions if applicable",
               is_flag=True)
-def main(path, index, runs, norender, deterministic):
+@click.option("--env", help="Override which environment the policy will be executed in",
+              type=str, default=None)
+def main(path, index, runs, norender, deterministic, env):
     """
     Loads a snapshot and simulates the corresponding policy and environment.
     """
@@ -32,7 +34,10 @@ def main(path, index, runs, norender, deterministic):
 
     config, state = snapshot
     pprint.pprint(config)
-    env = VecEnvMaker(config['env'])(train=False)
+    if env is not None:
+        env = VecEnvMaker(env)(train=False)
+    else:
+        env = VecEnvMaker(config['env'])(train=False)
     policy = config['policy'].pop('class')(env, **config['policy'])
     policy.load_state_dict(state['policy'])
 
