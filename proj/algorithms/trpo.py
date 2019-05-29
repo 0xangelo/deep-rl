@@ -63,10 +63,7 @@ def trpo(env, policy, val_fn=None, total_steps=int(1e6), steps=125,
         logger.info("Computing truncated natural gradient")
         F_0 = lambda v: fisher_vec_prod(v, subsamp_obs, policy)
         descent_direction = conjugate_gradient(F_0, pol_grad)
-        scale = torch.sqrt(
-            2.0 * delta *
-            (1. / (descent_direction.dot(F_0(descent_direction))) + 1e-8)
-        )
+        scale = torch.sqrt(2 * delta / (pol_grad.dot(descent_direction) + 1e-8))
         descent_step = descent_direction * scale
 
         if linesearch:
