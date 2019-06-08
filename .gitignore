@@ -126,3 +126,6 @@ local/
 
 # vectorized images
 *.pdf
+
+# npm
+node_modules/
