@@ -10,6 +10,7 @@ from proj.utils.torch_util import ExpandVector, TanhTransform, AffineTransform
 # Distribution types
 # ==============================
 
+
 class DistributionType(ABC, nn.Module):
     """ Maps flat vectors to probability distirbutions.
 
@@ -43,6 +44,7 @@ class DistributionType(ABC, nn.Module):
 
 LOG_STD_MAX = 2
 LOG_STD_MIN = -20
+
 
 class DiagNormalPDType(DistributionType):
     def __init__(self, size, in_features, *, indep_std=True):
@@ -117,9 +119,11 @@ class CategoricalPDType(DistributionType):
     def from_flat(self, flat_params):
         return self.pd_class(flat_params)
 
+
 # ==============================
 # Distributions
 # ==============================
+
 
 class Distribution(ABC):
     """ Probability distribution constructed from flat vectors.
@@ -166,9 +170,10 @@ class DiagNormal(dists.Independent, Distribution):
 @dists.kl.register_kl(DiagNormal, DiagNormal)
 def _kl_diagnormal(dist1, dist2):
     return torch.sum(
-        ((dist1.mean - dist2.mean).pow(2) + dist1.variance - dist2.variance) /
-        (2 * dist2.variance + 1e-8) + torch.log(dist2.stddev / dist1.stddev),
-        dim=-1
+        ((dist1.mean - dist2.mean).pow(2) + dist1.variance - dist2.variance)
+        / (2 * dist2.variance + 1e-8)
+        + torch.log(dist2.stddev / dist1.stddev),
+        dim=-1,
     )
 
 
@@ -178,7 +183,8 @@ class ClampedDiagNormal(dists.TransformedDistribution, Distribution):
         self.high = high
         squash = TanhTransform(cache_size=1)
         shift = AffineTransform(
-            (high+low) / 2, (high-low) / 2, cache_size=1, event_dim=1)
+            (high + low) / 2, (high - low) / 2, cache_size=1, event_dim=1
+        )
         super().__init__(DiagNormal(flatparam), [squash, shift])
 
     @property
@@ -218,16 +224,19 @@ class Categorical(dists.Categorical, Distribution):
 
 def pdtype(ac_space, in_features, *, clamp_acts=False, indep_std=True):
     from gym import spaces
+
     if isinstance(ac_space, spaces.Box):
         assert len(ac_space.shape) == 1
         if clamp_acts:
             return ClampedDiagNormalPDType(
-                ac_space.shape[0], in_features, indep_std=indep_std,
+                ac_space.shape[0],
+                in_features,
+                indep_std=indep_std,
                 low=torch.Tensor(ac_space.low),
-                high=torch.Tensor(ac_space.high))
+                high=torch.Tensor(ac_space.high),
+            )
         else:
-            return DiagNormalPDType(
-                ac_space.shape[0], in_features, indep_std=indep_std)
+            return DiagNormalPDType(ac_space.shape[0], in_features, indep_std=indep_std)
     elif isinstance(ac_space, spaces.Discrete):
         return CategoricalPDType(ac_space.n, in_features)
     else:
