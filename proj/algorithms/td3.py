@@ -1,3 +1,4 @@
+from itertools import chain
 import torch
 import numpy as np
 from baselines import logger
@@ -10,15 +11,33 @@ from proj.common.log_utils import save_config, log_reward_statistics
 from proj.common.env_makers import VecEnvMaker
 
 
-def td3(env, policy, q_func=None, total_steps=int(5e5), gamma=0.99,
-        replay_size=int(1e6), polyak=0.995, start_steps=10000, epoch=5000,
-        pi_lr=1e-3, qf_lr=1e-3, mb_size=100, act_noise=0.1, max_ep_length=1000,
-        target_noise=0.2, noise_clip=0.5, policy_delay=2,
-        updates_per_step=1.0, **saver_kwargs):
+TOTAL_STEPS_DEFAULT = int(1e6)
+REPLAY_SIZE_DEFAULT = int(1e6)
 
+
+def td3(
+    env,
+    policy,
+    q_func=None,
+    total_steps=TOTAL_STEPS_DEFAULT,
+    gamma=0.99,
+    replay_size=REPLAY_SIZE_DEFAULT,
+    polyak=0.995,
+    start_steps=10000,
+    epoch=5000,
+    pi_lr=1e-3,
+    qf_lr=1e-3,
+    mb_size=100,
+    act_noise=0.1,
+    max_ep_length=1000,
+    target_noise=0.2,
+    noise_clip=0.5,
+    policy_delay=2,
+    updates_per_step=1.0,
+    **saver_kwargs
+):
     # Set and save experiment hyperparameters
-    if q_func is None:
-        q_func = ContinuousQFunction.from_policy(policy)
+    q_func = q_func or ContinuousQFunction.from_policy(policy)
     save_config(locals())
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
@@ -26,8 +45,8 @@ def td3(env, policy, q_func=None, total_steps=int(5e5), gamma=0.99,
     vec_env = VecEnvMaker(env)()
     test_env = VecEnvMaker(env)(train=False)
     ob_space, ac_space = vec_env.observation_space, vec_env.action_space
-    pi_class, pi_args = policy.pop('class'), policy
-    qf_class, qf_args = q_func.pop('class'), q_func
+    pi_class, pi_args = policy.pop("class"), policy
+    qf_class, qf_args = q_func.pop("class"), q_func
     policy = pi_class(vec_env, **pi_args)
     q1func = qf_class(vec_env, **qf_args)
     q2func = qf_class(vec_env, **qf_args)
@@ -37,7 +56,8 @@ def td3(env, policy, q_func=None, total_steps=int(5e5), gamma=0.99,
     loss_fn = torch.nn.MSELoss()
     pi_optim = torch.optim.Adam(policy.parameters(), lr=pi_lr)
     qf_optim = torch.optim.Adam(
-        list(q1func.parameters()) + list(q2func.parameters()), lr=qf_lr)
+        chain(q1func.parameters(), q2func.parameters()), lr=qf_lr
+    )
     pi_targ = pi_class(vec_env, **pi_args)
     q1_targ = qf_class(vec_env, **qf_args)
     q2_targ = qf_class(vec_env, **qf_args)
@@ -47,8 +67,8 @@ def td3(env, policy, q_func=None, total_steps=int(5e5), gamma=0.99,
 
     # Save initial state
     saver.save_state(
-        0,
-        dict(
+        index=0,
+        state=dict(
             alg=dict(samples=0),
             policy=policy.state_dict(),
             q1func=q1func.state_dict(),
@@ -57,12 +77,13 @@ def td3(env, policy, q_func=None, total_steps=int(5e5), gamma=0.99,
             qf_optim=qf_optim.state_dict(),
             pi_targ=pi_targ.state_dict(),
             q1_targ=q1_targ.state_dict(),
-            q2_targ=q2_targ.state_dict()
-        )
+            q2_targ=q2_targ.state_dict(),
+        ),
     )
 
     # Setup and run policy tests
     ob, don = test_env.reset(), False
+
     @torch.no_grad()
     def test_policy():
         nonlocal ob, don
@@ -71,22 +92,24 @@ def td3(env, policy, q_func=None, total_steps=int(5e5), gamma=0.99,
                 act = policy.actions(torch.from_numpy(ob))
                 ob, _, don, _ = test_env.step(act.numpy())
             don = False
-        log_reward_statistics(test_env, num_last_eps=10, prefix='Test')
+        log_reward_statistics(test_env, num_last_eps=10, prefix="Test")
+
     test_policy()
     logger.logkv("Epoch", 0)
     logger.logkv("TotalNSamples", 0)
     logger.dumpkvs()
 
     # Set action sampling strategies
-    rand_uniform_actions = lambda _: np.stack(
-        [ac_space.sample() for _ in range(vec_env.num_envs)])
+    def rand_uniform_actions(_):
+        return np.stack([ac_space.sample() for _ in range(vec_env.num_envs)])
 
     act_low, act_high = map(torch.Tensor, (ac_space.low, ac_space.high))
+
     @torch.no_grad()
     def noisy_policy_actions(obs):
         acts = policy.actions(torch.from_numpy(obs))
-        acts += act_noise*torch.randn_like(acts)
-        return torch.max(torch.min(acts, act_high), act_low).numpy()
+        acts += act_noise * torch.randn_like(acts)
+        return np.clip(acts.numpy(), ac_space.low, ac_space.high)
 
     # Algorithm main loop
     obs1, ep_length, critic_updates = vec_env.reset(), 0, 0
@@ -101,8 +124,7 @@ def td3(env, policy, q_func=None, total_steps=int(5e5), gamma=0.99,
         ep_length += 1
         dones[0] = False if ep_length == max_ep_length else dones[0]
 
-        as_tensors = map(
-            torch.from_numpy, (obs1, acts, rews, obs2, dones.astype('f')))
+        as_tensors = map(torch.from_numpy, (obs1, acts, rews, obs2, dones.astype("f")))
         for ob1, act, rew, ob2, done in zip(*as_tensors):
             replay.store(ob1, act, rew, ob2, done)
         obs1 = obs2
@@ -112,11 +134,13 @@ def td3(env, policy, q_func=None, total_steps=int(5e5), gamma=0.99,
                 ob_1, act_, rew_, ob_2, done_ = replay.sample(mb_size)
                 with torch.no_grad():
                     atarg = pi_targ(ob_2)
-                    atarg += torch.clamp(target_noise * torch.randn_like(atarg),
-                                         -noise_clip, noise_clip)
+                    atarg += torch.clamp(
+                        target_noise * torch.randn_like(atarg), -noise_clip, noise_clip
+                    )
                     atarg = torch.max(torch.min(atarg, act_high), act_low)
-                    targs = rew_ + gamma*(1-done_) * torch.min(
-                        q1_targ(ob_2, atarg), q2_targ(ob_2, atarg))
+                    targs = rew_ + gamma * (1 - done_) * torch.min(
+                        q1_targ(ob_2, atarg), q2_targ(ob_2, atarg)
+                    )
 
                 qf_optim.zero_grad()
                 q1_val = q1func(ob_1, act_)
@@ -156,8 +180,8 @@ def td3(env, policy, q_func=None, total_steps=int(5e5), gamma=0.99,
             logger.dumpkvs()
 
             saver.save_state(
-                samples // epoch,
-                dict(
+                index=samples // epoch,
+                state=dict(
                     alg=dict(samples=samples),
                     policy=policy.state_dict(),
                     q1func=q1func.state_dict(),
@@ -166,6 +190,6 @@ def td3(env, policy, q_func=None, total_steps=int(5e5), gamma=0.99,
                     qf_optim=qf_optim.state_dict(),
                     pi_targ=pi_targ.state_dict(),
                     q1_targ=q1_targ.state_dict(),
-                    q2_targ=q2_targ.state_dict()
-                )
+                    q2_targ=q2_targ.state_dict(),
+                ),
             )
