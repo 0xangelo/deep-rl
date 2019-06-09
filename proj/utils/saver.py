@@ -1,11 +1,11 @@
+"""
+Utility for pickling, saving and reloading snapshots
+"""
 import os
 import torch
 import copy
 import cloudpickle.cloudpickle as cpkl
 
-# ==============================
-# Saving snapshots
-# ==============================
 
 class SnapshotSaver(object):
     def __init__(self, path, config=None, save_interval=10, latest_only=None):
@@ -30,7 +30,7 @@ class SnapshotSaver(object):
     def get_snapshot_path(self, index):
         return os.path.join(
             self.snapshots_folder,
-            "latest.pkl" if self.latest_only else "%d.pkl" % index
+            "latest.pkl" if self.latest_only else "%d.pkl" % index,
         )
 
     def save_state(self, index, state):
@@ -41,7 +41,7 @@ class SnapshotSaver(object):
             with open(file_path, "wb") as f:
                 torch.save(state, f, pickle_module=cpkl, pickle_protocol=-1)
 
-    def get_state(self, index=None, device='cpu'):
+    def get_state(self, index=None, device="cpu"):
         device = torch.device(device)
         if self.latest_only:
             try:
@@ -57,8 +57,9 @@ class SnapshotSaver(object):
                 pass
         else:
             snapshot_files = os.listdir(self.snapshots_folder)
-            snapshot_files = sorted(
-                snapshot_files, key=lambda x: int(x.split(".")[0]))[::-1]
+            snapshot_files = sorted(snapshot_files, key=lambda x: int(x.split(".")[0]))[
+                ::-1
+            ]
             for file in snapshot_files:
                 file_path = os.path.join(self.snapshots_folder, file)
                 try:
