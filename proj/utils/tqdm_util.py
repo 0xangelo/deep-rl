@@ -1,4 +1,5 @@
-import sys, contextlib
+import sys
+import contextlib
 from tqdm import tqdm as _tqdm, trange as _trange
 
 
@@ -9,6 +10,7 @@ class DummyTqdmFile(object):
     """
     Dummy file-like that will write to tqdm
     """
+
     file = None
 
     def __init__(self, file):
@@ -48,8 +50,10 @@ def trange(*args, **kwargs):
     A wrapper for tqdm.trange, automatically setting file=std_out() and
     dynamic_ncols=True if not specified.
     """
-    if 'file' not in kwargs: kwargs['file'] = std_out()
-    if 'dynamic_ncols' not in kwargs: kwargs['dynamic_ncols'] = True
+    if "file" not in kwargs:
+        kwargs["file"] = std_out()
+    if "dynamic_ncols" not in kwargs:
+        kwargs["dynamic_ncols"] = True
     return _trange(*args, **kwargs)
 
 
@@ -58,6 +62,8 @@ def tqdm(*args, **kwargs):
     A wrapper for tqdm.tqdm, automatically setting file=std_out() and
     dynamic_ncols=True if not specified.
     """
-    if 'file' not in kwargs: kwargs['file'] = std_out()
-    if 'dynamic_ncols' not in kwargs: kwargs['dynamic_ncols'] = True
+    if "file" not in kwargs:
+        kwargs["file"] = std_out()
+    if "dynamic_ncols" not in kwargs:
+        kwargs["dynamic_ncols"] = True
     return _tqdm(*args, **kwargs)
