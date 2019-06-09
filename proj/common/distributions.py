@@ -3,8 +3,9 @@
 import torch
 import torch.nn as nn
 import torch.distributions as dists
+from torch.distributions import AffineTransform
 from abc import ABC, abstractmethod
-from proj.utils.torch_util import ExpandVector, TanhTransform, AffineTransform
+from proj.utils.torch_util import ExpandVector, TanhTransform
 
 # ==============================
 # Distribution types
