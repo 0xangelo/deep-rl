@@ -10,17 +10,34 @@ from proj.common.log_utils import save_config, log_reward_statistics
 from proj.common.env_makers import VecEnvMaker
 
 
-def sac(env, policy, q_func=None, val_fn=None, total_steps=int(5e5),
-        gamma=0.99, replay_size=int(1e6), polyak=0.995, start_steps=10000,
-        epoch=5000, mb_size=100, lr=1e-3, alpha=0.2, target_entropy=None,
-        reward_scale=1.0, updates_per_step=1.0, max_ep_length=1000,
-        **saver_kwargs):
+TOTAL_STEPS_DEFAULT = int(1e6)
+REPLAY_SIZE_DEFAULT = int(1e6)
+
+
+def sac(
+    env,
+    policy,
+    q_func=None,
+    val_fn=None,
+    total_steps=TOTAL_STEPS_DEFAULT,
+    gamma=0.99,
+    replay_size=REPLAY_SIZE_DEFAULT,
+    polyak=0.995,
+    start_steps=10000,
+    epoch=5000,
+    mb_size=100,
+    lr=1e-3,
+    alpha=0.2,
+    target_entropy=None,
+    reward_scale=1.0,
+    updates_per_step=1.0,
+    max_ep_length=1000,
+    **saver_kwargs
+):
 
     # Set and save experiment hyperparameters
-    if q_func is None:
-        q_func = ContinuousQFunction.from_policy(policy)
-    if val_fn is None:
-        val_fn = ValueFunction.from_policy(policy)
+    q_func = q_func or ContinuousQFunction.from_policy(policy)
+    val_fn = val_fn or ValueFunction.from_policy(policy)
     save_config(locals())
     saver = SnapshotSaver(logger.get_dir(), locals(), **saver_kwargs)
 
@@ -28,9 +45,9 @@ def sac(env, policy, q_func=None, val_fn=None, total_steps=int(5e5),
     vec_env = VecEnvMaker(env)()
     test_env = VecEnvMaker(env)(train=False)
     ob_space, ac_space = vec_env.observation_space, vec_env.action_space
-    pi_class, pi_args = policy.pop('class'), policy
-    qf_class, qf_args = q_func.pop('class'), q_func
-    vf_class, vf_args = val_fn.pop('class'), val_fn
+    pi_class, pi_args = policy.pop("class"), policy
+    qf_class, qf_args = q_func.pop("class"), q_func
+    vf_class, vf_args = val_fn.pop("class"), val_fn
     policy = pi_class(vec_env, **pi_args)
     q1func = qf_class(vec_env, **qf_args)
     q2func = qf_class(vec_env, **qf_args)
@@ -38,14 +55,15 @@ def sac(env, policy, q_func=None, val_fn=None, total_steps=int(5e5),
     replay = ReplayBuffer(replay_size, ob_space, ac_space)
     if target_entropy is not None:
         log_alpha = torch.nn.Parameter(torch.zeros([]))
-        if target_entropy == 'auto':
+        if target_entropy == "auto":
             target_entropy = -np.prod(ac_space.shape)
 
     # Initialize optimizers and target networks
     loss_fn = torch.nn.MSELoss()
     pi_optim = torch.optim.Adam(policy.parameters(), lr=lr)
     qf_optim = torch.optim.Adam(
-        list(q1func.parameters()) + list(q2func.parameters()), lr=lr)
+        list(q1func.parameters()) + list(q2func.parameters()), lr=lr
+    )
     vf_optim = torch.optim.Adam(val_fn.parameters(), lr=lr)
     vf_targ = vf_class(vec_env, **vf_args)
     vf_targ.load_state_dict(val_fn.state_dict())
@@ -62,15 +80,16 @@ def sac(env, policy, q_func=None, val_fn=None, total_steps=int(5e5),
         pi_optim=pi_optim.state_dict(),
         qf_optim=qf_optim.state_dict(),
         vf_optim=vf_optim.state_dict(),
-        vf_targ=vf_targ.state_dict()
+        vf_targ=vf_targ.state_dict(),
     )
     if target_entropy is not None:
-        state['log_alpha'] = log_alpha
-        state['al_optim'] = al_optim.state_dict()
-    saver.save_state(0, state)
+        state["log_alpha"] = log_alpha
+        state["al_optim"] = al_optim.state_dict()
+    saver.save_state(index=0, state=state)
 
     # Setup and run policy tests
     ob, don = test_env.reset(), False
+
     @torch.no_grad()
     def test_policy():
         nonlocal ob, don
@@ -81,16 +100,16 @@ def sac(env, policy, q_func=None, val_fn=None, total_steps=int(5e5),
                 ob, _, don, _ = test_env.step(act.numpy())
             don = False
         policy.train()
-        log_reward_statistics(test_env, num_last_eps=10, prefix='Test')
+        log_reward_statistics(test_env, num_last_eps=10, prefix="Test")
+
     test_policy()
     logger.logkv("Epoch", 0)
     logger.logkv("TotalNSamples", 0)
-    log_reward_statistics(vec_env)
     logger.dumpkvs()
 
     # Set action sampling strategies
-    rand_uniform_actions = lambda _: np.stack(
-        [ac_space.sample() for _ in range(vec_env.num_envs)])
+    def rand_uniform_actions(_):
+        return np.stack([ac_space.sample() for _ in range(vec_env.num_envs)])
 
     @torch.no_grad()
     def stoch_policy_actions(obs):
@@ -109,8 +128,7 @@ def sac(env, policy, q_func=None, val_fn=None, total_steps=int(5e5),
         ep_length += 1
         dones[0] = False if ep_length == max_ep_length else dones[0]
 
-        as_tensors = map(
-            torch.from_numpy, (obs1, acts, rews, obs2, dones.astype('f')))
+        as_tensors = map(torch.from_numpy, (obs1, acts, rews, obs2, dones.astype("f")))
         for ob1, act, rew, ob2, done in zip(*as_tensors):
             replay.store(ob1, act, rew, ob2, done)
         obs1 = obs2
@@ -124,16 +142,18 @@ def sac(env, policy, q_func=None, val_fn=None, total_steps=int(5e5),
                 if target_entropy is not None:
                     al_optim.zero_grad()
                     alpha_loss = torch.mean(
-                        log_alpha * (logp.detach()+target_entropy)).neg()
+                        log_alpha * (logp.detach() + target_entropy)
+                    ).neg()
                     alpha_loss.backward()
                     al_optim.step()
                     logger.logkv_mean("AlphaLoss", alpha_loss.item())
                     alpha = log_alpha.exp().item()
 
                 with torch.no_grad():
-                    y_qf = reward_scale*rew_ + gamma*(1-done_)*vf_targ(ob_2)
-                    y_vf = torch.min(q1func(ob_1, pi_a), q2func(ob_1, pi_a)) \
-                           - alpha*logp
+                    y_qf = reward_scale * rew_ + gamma * (1 - done_) * vf_targ(ob_2)
+                    y_vf = (
+                        torch.min(q1func(ob_1, pi_a), q2func(ob_1, pi_a)) - alpha * logp
+                    )
 
                 qf_optim.zero_grad()
                 q1_val = q1func(ob_1, act_)
@@ -187,9 +207,9 @@ def sac(env, policy, q_func=None, val_fn=None, total_steps=int(5e5),
                 pi_optim=pi_optim.state_dict(),
                 qf_optim=qf_optim.state_dict(),
                 vf_optim=vf_optim.state_dict(),
-                vf_targ=vf_targ.state_dict()
+                vf_targ=vf_targ.state_dict(),
             )
             if target_entropy is not None:
-                state['log_alpha'] = log_alpha
-                state['al_optim'] = al_optim.state_dict()
-            saver.save_state(samples // epoch, state)
+                state["log_alpha"] = log_alpha
+                state["al_optim"] = al_optim.state_dict()
+            saver.save_state(index=samples // epoch, state=state)
