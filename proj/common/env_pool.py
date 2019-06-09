@@ -1,39 +1,40 @@
+"""
+Vectorized environment wrappers.
+"""
 import numpy as np
 import multiprocessing as mp
 import ctypes
 from baselines.common.vec_env import VecEnv
 
-# ==============================
-# Using mp.Pipe (pickles data)
-# ==============================
 
 def env_worker(env_maker, conn, n_envs):
     envs = [env_maker() for _ in range(n_envs)]
     try:
         while True:
             command, data = conn.recv()
-            if command == 'reset':
+            if command == "reset":
                 conn.send([env.reset() for env in envs])
-            elif command == 'seed':
+            elif command == "seed":
                 for env, seed in zip(envs, data):
                     env.seed(int(seed))
-            elif command == 'step':
+            elif command == "step":
                 results = []
                 for env, action in zip(envs, data):
                     next_ob, rew, done, info = env.step(action)
-                    if done: next_ob = env.reset()
+                    if done:
+                        next_ob = env.reset()
                     results.append((next_ob, rew, done, info))
                 conn.send(results)
-            elif command == 'get_spaces':
+            elif command == "get_spaces":
                 conn.send((envs[0].observation_space, envs[0].action_space))
-            elif command == 'render':
-                conn.send([env.render(mode='rgb_array') for env in envs])
-            elif command == 'close':
+            elif command == "render":
+                conn.send([env.render(mode="rgb_array") for env in envs])
+            elif command == "close":
                 break
             else:
                 raise ValueError("Unrecognized command: {}".format(command))
     except KeyboardInterrupt:
-        print('EnvPool worker: got KeyboardInterrupt')
+        print("EnvPool worker: got KeyboardInterrupt")
     finally:
         conn.close()
         for env in envs:
@@ -42,31 +43,34 @@ def env_worker(env_maker, conn, n_envs):
 
 class EnvPool(VecEnv):
     """
-    Using a pool of workers to run multiple environments in parallel. This
-    implementation supports multiple environments per worker to be as flexible
-    as possible.
+    Uses a pool of workers to run multiple environments in parallel using
+    mp.Pipe (pickles data). This implementation supports multiple environments
+    per worker to be as flexible as possible.
     """
 
-    def __init__(self, env_maker, n_envs=mp.cpu_count(),
-                 n_parallel=mp.cpu_count() / 2):
+    def __init__(self, env_maker, n_envs=None, n_parallel=None):
+        n_envs = n_envs or mp.cpu_count()
+        n_parallel = n_parallel or mp.cpu_count() / 2
         # No point in having more parallel workers than environments
         self.n_parallel = n_envs if n_parallel > n_envs else n_parallel
         # try to split evenly, but this isn't always possible
         num_worker_envs = [
-            len(d) for d in np.array_split(np.arange(n_envs), self.n_parallel)]
+            len(d) for d in np.array_split(np.arange(n_envs), self.n_parallel)
+        ]
         self.worker_env_seps = np.concatenate([[0], np.cumsum(num_worker_envs)])
 
         self.workers, self.conns = [], []
-        for num_envs in (self.worker_env_seps[1:] - self.worker_env_seps[:-1]):
+        for num_envs in self.worker_env_seps[1:] - self.worker_env_seps[:-1]:
             worker_conn, master_conn = mp.Pipe()
             worker = mp.Process(
-                target=env_worker, args=(env_maker, worker_conn, num_envs))
+                target=env_worker, args=(env_maker, worker_conn, num_envs)
+            )
             worker.daemon = True
             worker.start()
             self.workers.append(worker)
             self.conns.append(master_conn)
 
-        self.conns[0].send(('get_spaces', None))
+        self.conns[0].send(("get_spaces", None))
         ob_space, ac_space = self.conns[0].recv()
         super().__init__(n_envs, ob_space, ac_space)
 
@@ -74,8 +78,7 @@ class EnvPool(VecEnv):
         self.closed = False
 
         # set initial seeds
-        seeds = np.random.randint(
-            low=0, high=np.iinfo(np.int32).max, size=n_envs)
+        seeds = np.random.randint(low=0, high=np.iinfo(np.int32).max, size=n_envs)
         self.seed(seeds)
 
     def reset(self):
@@ -83,7 +86,7 @@ class EnvPool(VecEnv):
         if self.waiting:
             self.step_wait()
         for conn in self.conns:
-            conn.send(('reset', None))
+            conn.send(("reset", None))
         obs = []
         for conn in self.conns:
             obs.extend(conn.recv())
@@ -91,9 +94,10 @@ class EnvPool(VecEnv):
 
     def step_async(self, actions):
         assert not self.waiting and not self.closed
-        for conn, acts in zip(self.conns,
-                              np.split(actions, self.worker_env_seps[1:-1])):
-            conn.send(('step', acts))
+        for conn, acts in zip(
+            self.conns, np.split(actions, self.worker_env_seps[1:-1])
+        ):
+            conn.send(("step", acts))
         self.waiting = True
 
     def step_wait(self):
@@ -107,15 +111,14 @@ class EnvPool(VecEnv):
 
     def seed(self, seeds):
         assert not self.waiting and not self.closed
-        for conn, data in zip(self.conns,
-                              np.split(seeds, self.worker_env_seps[1:-1])):
-            conn.send(('seed', data))
+        for conn, data in zip(self.conns, np.split(seeds, self.worker_env_seps[1:-1])):
+            conn.send(("seed", data))
 
     def close_extras(self):
         if self.waiting:
             self.step_wait()
         for conn in self.conns:
-            conn.send(('close', None))
+            conn.send(("close", None))
             conn.close()
         for worker in self.workers:
             worker.join()
@@ -123,39 +126,40 @@ class EnvPool(VecEnv):
     def get_images(self):
         assert not self.waiting and not self.closed
         for conn in self.conns:
-            conn.send(('render', None))
+            conn.send(("render", None))
         imgs = []
         for conn in self.conns:
             imgs.extend(conn.recv())
         return imgs
 
-# ==============================
-# Using shared memory
-# ==============================
 
-_NP_TO_CT = {np.float32: ctypes.c_float,
-             np.int32: ctypes.c_int32,
-             np.int8: ctypes.c_int8,
-             np.uint8: ctypes.c_char,
-             np.bool: ctypes.c_bool}
+_NP_TO_CT = {
+    np.float32: ctypes.c_float,
+    np.int32: ctypes.c_int32,
+    np.int8: ctypes.c_int8,
+    np.uint8: ctypes.c_char,
+    np.bool: ctypes.c_bool,
+}
 
 
 def shm_worker(env_maker, conn, n_envs, obs_bufs, obs_shape, obs_dtype):
     envs = [env_maker() for _ in range(n_envs)]
+
     def _write_obs(obs):
         for ob, obs_buf in zip(obs, obs_bufs):
             dst = obs_buf.get_obj()
-            dst_np = np.frombuffer(dst, dtype=obs_dtype).reshape(obs_shape)  # pylint: disable=W0212
+            dst_np = np.frombuffer(dst, dtype=obs_dtype).reshape(obs_shape)
             np.copyto(dst_np, ob)
+
     try:
         while True:
             command, data = conn.recv()
-            if command == 'reset':
+            if command == "reset":
                 conn.send(_write_obs([env.reset() for env in envs]))
-            elif command == 'seed':
+            elif command == "seed":
                 for env, seed in zip(envs, data):
                     env.seed(int(seed))
-            elif command == 'step':
+            elif command == "step":
                 results, obs = [], []
                 for env, action in zip(envs, data):
                     ob, rew, done, info = env.step(action)
@@ -165,14 +169,14 @@ def shm_worker(env_maker, conn, n_envs, obs_bufs, obs_shape, obs_dtype):
                     obs.append(ob)
                 _write_obs(obs)
                 conn.send(results)
-            elif command == 'render':
-                conn.send([env.render(mode='rgb_array') for env in envs])
-            elif command == 'close':
+            elif command == "render":
+                conn.send([env.render(mode="rgb_array") for env in envs])
+            elif command == "close":
                 break
             else:
                 raise RuntimeError("Unrecognized command: {}".format(command))
     except KeyboardInterrupt:
-        print('ShmEnvPool worker: got KeyboardInterrupt')
+        print("ShmEnvPool worker: got KeyboardInterrupt")
     finally:
         conn.close()
         for env in envs:
@@ -180,8 +184,15 @@ def shm_worker(env_maker, conn, n_envs, obs_bufs, obs_shape, obs_dtype):
 
 
 class ShmEnvPool(VecEnv):
-    def __init__(self, env_maker, n_envs=mp.cpu_count(),
-                 n_parallel=mp.cpu_count() / 2):
+    """
+    Uses a pool of workers to run multiple environments in parallel using shared
+    memory to pass observations. This implementation supports multiple
+    environments per worker to be as flexible as possible.
+    """
+
+    def __init__(self, env_maker, n_envs=None, n_parallel=None):
+        n_envs = n_envs or mp.cpu_count()
+        n_parallel = n_parallel or mp.cpu_count() / 2
         dummy = env_maker()
         ob_space, ac_space = dummy.observation_space, dummy.action_space
         del dummy
@@ -191,23 +202,31 @@ class ShmEnvPool(VecEnv):
         self.n_parallel = n_envs if n_parallel > n_envs else n_parallel
         # try to split evenly, but this isn't always possible
         num_worker_envs = [
-            len(d) for d in np.array_split(np.arange(n_envs), self.n_parallel)]
+            len(d) for d in np.array_split(np.arange(n_envs), self.n_parallel)
+        ]
         self.worker_env_seps = np.concatenate([[0], np.cumsum(num_worker_envs)])
 
         self.obs_dtype, self.obs_shape = ob_space.dtype, ob_space.shape
         self.obs_bufs = []
         for _ in range(n_envs):
-            self.obs_bufs.append(mp.Array(_NP_TO_CT[ob_space.dtype.type],
-                                          int(np.prod(ob_space.shape))))
+            self.obs_bufs.append(
+                mp.Array(_NP_TO_CT[ob_space.dtype.type], int(np.prod(ob_space.shape)))
+            )
 
         self.workers, self.conns = [], []
-        for beg, end in zip(self.worker_env_seps[:-1],
-                            self.worker_env_seps[1:]):
+        for beg, end in zip(self.worker_env_seps[:-1], self.worker_env_seps[1:]):
             worker_conn, master_conn = mp.Pipe()
             worker = mp.Process(
                 target=shm_worker,
-                args=(env_maker, worker_conn, end - beg,
-                      self.obs_bufs[beg:end], ob_space.shape, ob_space.dtype))
+                args=(
+                    env_maker,
+                    worker_conn,
+                    end - beg,
+                    self.obs_bufs[beg:end],
+                    ob_space.shape,
+                    ob_space.dtype,
+                ),
+            )
             worker.daemon = True
             worker.start()
             self.workers.append(worker)
@@ -217,8 +236,7 @@ class ShmEnvPool(VecEnv):
         self.closed = False
 
         # set initial seeds
-        seeds = np.random.randint(
-            low=0, high=np.iinfo(np.int32).max, size=n_envs)
+        seeds = np.random.randint(low=0, high=np.iinfo(np.int32).max, size=n_envs)
         self.seed(seeds)
 
     def reset(self):
@@ -226,16 +244,17 @@ class ShmEnvPool(VecEnv):
         if self.waiting:
             self.step_wait()
         for conn in self.conns:
-            conn.send(('reset', None))
+            conn.send(("reset", None))
         for conn in self.conns:
             conn.recv()
         return self._decode_obses()
 
     def step_async(self, actions):
         assert not self.waiting and not self.closed
-        for conn, acts in zip(self.conns,
-                              np.split(actions, self.worker_env_seps[1:-1])):
-            conn.send(('step', acts))
+        for conn, acts in zip(
+            self.conns, np.split(actions, self.worker_env_seps[1:-1])
+        ):
+            conn.send(("step", acts))
         self.waiting = True
 
     def step_wait(self):
@@ -249,15 +268,14 @@ class ShmEnvPool(VecEnv):
 
     def seed(self, seeds):
         assert not self.waiting and not self.closed
-        for conn, data in zip(self.conns,
-                              np.split(seeds, self.worker_env_seps[1:-1])):
-            conn.send(('seed', data))
+        for conn, data in zip(self.conns, np.split(seeds, self.worker_env_seps[1:-1])):
+            conn.send(("seed", data))
 
     def close_extras(self):
         if self.waiting:
             self.step_wait()
         for conn in self.conns:
-            conn.send(('close', None))
+            conn.send(("close", None))
             conn.close()
         for worker in self.workers:
             worker.join()
@@ -266,7 +284,7 @@ class ShmEnvPool(VecEnv):
     def get_images(self):
         assert not self.waiting and not self.closed
         for conn in self.conns:
-            conn.send(('render', None))
+            conn.send(("render", None))
         imgs = []
         for conn in self.conns:
             imgs.extend(conn.recv())
@@ -274,7 +292,7 @@ class ShmEnvPool(VecEnv):
 
     def _decode_obses(self):
         results = [
-            np.frombuffer(b.get_obj(), dtype=self.obs_dtype).reshape(
-                self.obs_shape)
-            for b in self.obs_bufs]
+            np.frombuffer(b.get_obj(), dtype=self.obs_dtype).reshape(self.obs_shape)
+            for b in self.obs_bufs
+        ]
         return np.stack(results)
