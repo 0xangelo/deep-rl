@@ -31,11 +31,11 @@ from proj.utils.json_util import convert_json
 
 DIV_LINE_WIDTH = 80
 DEFAULT_SHORTHAND = True
-LOG_FMTS = 'stdout,csv'
+LOG_FMTS = "stdout,csv"
 
 
 def all_bools(vals):
-    return all([isinstance(v,bool) for v in vals])
+    return all([isinstance(v, bool) for v in vals])
 
 
 def valid_str(v):
@@ -47,34 +47,35 @@ def valid_str(v):
     .. _`this gist`: https://gist.github.com/seanh/93666
 
     """
-    if hasattr(v, '__name__'):
+    if hasattr(v, "__name__"):
         return valid_str(v.__name__)
 
     if isinstance(v, tuple) or isinstance(v, list):
-        return '-'.join([valid_str(x) for x in v])
+        return "-".join([valid_str(x) for x in v])
 
     # Valid characters are '-', '_', and alphanumeric. Replace invalid chars
     # with '-'.
     str_v = str(v).lower()
     valid_chars = "-_%s%s" % (string.ascii_letters, string.digits)
-    str_v = ''.join(c if c in valid_chars else '-' for c in str_v)
+    str_v = "".join(c if c in valid_chars else "-" for c in str_v)
     return str_v
 
 
-def create_experiment(exp_name, thunk, seed=42, log_dir=None, format_strs=None,
-                      datestamp=None, **kwargs):
+def create_experiment(
+    exp_name, thunk, seed=42, log_dir=None, format_strs=None, datestamp=None, **kwargs
+):
     # Make base path
-    ymd_time = time.strftime("%Y-%m-%d_") if datestamp else ''
-    relpath = ''.join([ymd_time, exp_name])
+    ymd_time = time.strftime("%Y-%m-%d_") if datestamp else ""
+    relpath = "".join([ymd_time, exp_name])
 
     # Make a seed-specific subfolder in the experiment directory.
     if datestamp:
         hms_time = time.strftime("%Y-%m-%d_%H-%M-%S")
-        subfolder = ''.join([hms_time, '-', exp_name, '_s', str(seed)])
+        subfolder = "".join([hms_time, "-", exp_name, "_s", str(seed)])
     else:
-        subfolder = ''.join([exp_name, '_s', str(seed)])
+        subfolder = "".join([exp_name, "_s", str(seed)])
     relpath = osp.join(relpath, subfolder)
-    log_dir = log_dir or 'data'
+    log_dir = log_dir or "data"
     log_dir = osp.join(log_dir, relpath)
 
     def thunk_plus():
@@ -92,25 +93,20 @@ def create_experiment(exp_name, thunk, seed=42, log_dir=None, format_strs=None,
 
         with tqdm_out(), logger.scoped_configure(log_dir, format_strs):
             from proj.common.log_utils import save_config
-            # from proj.common.env_makers import VecEnvMaker
-
-            # if 'env' in kwargs:
-            #     kwargs['env_maker'] = VecEnvMaker(kwargs['env'])
-            #     del kwargs['env']
 
             logger.set_level(logger.WARN)
-            save_config({'exp_name': exp_name, 'alg': thunk})
+            save_config({"exp_name": exp_name, "alg": thunk})
             thunk(**kwargs)
 
     return thunk_plus
 
 
-class ExperimentGrid(object):
+class ExperimentGrid:
     """
     Tool for running many experiments given hyperparameter ranges.
     """
 
-    def __init__(self, name=''):
+    def __init__(self, name=""):
         self.keys = []
         self.vals = []
         self.shs = []
@@ -123,25 +119,25 @@ class ExperimentGrid(object):
 
     def print(self):
         """Print a helpful report about the experiment grid."""
-        print('='*DIV_LINE_WIDTH)
+        print("=" * DIV_LINE_WIDTH)
 
         # Prepare announcement at top of printing. If the ExperimentGrid has a
         # short name, write this as one line. If the name is long, break the
         # announcement over two lines.
-        base_msg = 'ExperimentGrid %s runs over parameters:\n'
-        name_insert = '['+self._name+']'
-        if len(base_msg%name_insert) <= 80:
-            msg = base_msg%name_insert
+        base_msg = "ExperimentGrid %s runs over parameters:\n"
+        name_insert = "[" + self._name + "]"
+        if len(base_msg % name_insert) <= 80:
+            msg = base_msg % name_insert
         else:
-            msg = base_msg%(name_insert+'\n')
+            msg = base_msg % (name_insert + "\n")
         print(msg)
 
         # List off parameters, shorthands, and possible values.
-        for k, v, sh in zip(self.keys, self.vals, self.shs):
-            color_k = k.ljust(40)
-            print('', color_k, '['+sh+']' if sh is not None else '', '\n')
-            for i, val in enumerate(v):
-                print('\t' + str(convert_json(val)))
+        for key, val, sh in zip(self.keys, self.vals, self.shs):
+            color_k = key.ljust(40)
+            print("", color_k, "[" + sh + "]" if sh is not None else "", "\n")
+            for value in val:
+                print("\t" + str(convert_json(value)))
             print()
 
         # Count up the number of variants. The number counting seeds
@@ -151,16 +147,15 @@ class ExperimentGrid(object):
         nvars_total = 1
         for v in self.vals:
             nvars_total *= len(v)
-        if 'seed' in self.keys:
-            num_seeds = len(self.vals[self.keys.index('seed')])
+        if "seed" in self.keys:
+            num_seeds = len(self.vals[self.keys.index("seed")])
             nvars_seedless = int(nvars_total / num_seeds)
         else:
             nvars_seedless = nvars_total
-        print(' Variants, counting seeds: '.ljust(40), nvars_total)
-        print(' Variants, not counting seeds: '.ljust(40), nvars_seedless)
+        print(" Variants, counting seeds: ".ljust(40), nvars_total)
+        print(" Variants, not counting seeds: ".ljust(40), nvars_seedless)
         print()
-        print('='*DIV_LINE_WIDTH)
-
+        print("=" * DIV_LINE_WIDTH)
 
     def _default_shorthand(self, key):
         # Create a default shorthand for the key, built from the first
@@ -168,9 +163,11 @@ class ExperimentGrid(object):
         # But if the first three letters contains something which isn't
         # alphanumeric, shear that off.
         valid_chars = "%s%s" % (string.ascii_letters, string.digits)
+
         def shear(x):
-            return ''.join(z for z in x[:3] if z in valid_chars)
-        sh = '-'.join([shear(x) for x in key.split(':')])
+            return "".join(z for z in x[:3] if z in valid_chars)
+
+        sh = "-".join([shear(x) for x in key.split(":")])
         return sh
 
     def add(self, key, vals, shorthand=None, in_name=False):
@@ -195,8 +192,9 @@ class ExperimentGrid(object):
                 inclusion of this parameter into the name.
         """
         assert isinstance(key, str), "Key must be a string."
-        assert shorthand is None or isinstance(shorthand, str), \
-            "Shorthand must be a string."
+        assert shorthand is None or isinstance(
+            shorthand, str
+        ), "Shorthand must be a string."
         if not isinstance(vals, list):
             vals = [vals]
         if DEFAULT_SHORTHAND and shorthand is None:
@@ -226,8 +224,8 @@ class ExperimentGrid(object):
             if k in v:
                 return v[k]
             else:
-                splits = k.split(':')
-                k0, k1 = splits[0], ':'.join(splits[1:])
+                splits = k.split(":")
+                k0, k1 = splits[0], ":".join(splits[1:])
                 return get_val(v[k0], k1)
 
         # Start the name off with the name of the variant generator.
@@ -242,7 +240,7 @@ class ExperimentGrid(object):
             # Except, however, when the parameter is 'seed'. Seed is handled
             # differently so that runs of the same experiment, with different
             # seeds, will be grouped by experiment name.
-            if (len(v)>1 or inn) and not(k=='seed'):
+            if (len(v) > 1 or inn) and not (k == "seed"):
 
                 # Use the shorthand if available, otherwise the full name.
                 param_name = sh if sh is not None else k
@@ -255,17 +253,17 @@ class ExperimentGrid(object):
                 if all_bools(v):
                     # If this is a param which only takes boolean values,
                     # only include in the name if it's True for this variant.
-                    var_name += ('_' + param_name) if variant_val else ''
+                    var_name += ("_" + param_name) if variant_val else ""
                 else:
-                    var_name += '_' + param_name + valid_str(variant_val)
+                    var_name += "_" + param_name + valid_str(variant_val)
 
-        return var_name.lstrip('_')
+        return var_name.lstrip("_")
 
     def _variants(self, keys, vals):
         """
         Recursively builds list of valid variants.
         """
-        if len(keys)==1:
+        if len(keys) == 1:
             pre_variants = [dict()]
         else:
             pre_variants = self._variants(keys[1:], vals[1:])
@@ -320,22 +318,24 @@ class ExperimentGrid(object):
             new_var = dict()
             unflatten_set = set()
 
-            for k,v in var.items():
-                if ':' in k:
-                    splits = k.split(':')
+            for k, v in var.items():
+                if ":" in k:
+                    splits = k.split(":")
                     k0 = splits[0]
-                    assert k0 not in new_var or isinstance(new_var[k0], dict), \
-                        "You can't assign multiple values to the same key."
+                    assert k0 not in new_var or isinstance(
+                        new_var[k0], dict
+                    ), "You can't assign multiple values to the same key."
 
-                    if not(k0 in new_var):
+                    if not (k0 in new_var):
                         new_var[k0] = dict()
 
-                    sub_k = ':'.join(splits[1:])
+                    sub_k = ":".join(splits[1:])
                     new_var[k0][sub_k] = v
                     unflatten_set.add(k0)
                 else:
-                    assert not(k in new_var), \
-                        "You can't assign multiple values to the same key."
+                    assert not (
+                        k in new_var
+                    ), "You can't assign multiple values to the same key."
                     new_var[k] = v
 
             # Make sure to fill out the nested dicts.
@@ -372,12 +372,11 @@ class ExperimentGrid(object):
         # Print variant names for the user.
         var_names = OrderedDict.fromkeys(map(self.variant_name, variants))
         var_names = list(var_names.keys())
-        line = '='*DIV_LINE_WIDTH
-        preparing = 'Preparing to run the following experiments...'
-        joined_var_names = '\n'.join(var_names)
+        line = "=" * DIV_LINE_WIDTH
+        preparing = "Preparing to run the following experiments..."
+        joined_var_names = "\n".join(var_names)
         announcement = f"\n{preparing}\n\n{joined_var_names}\n\n{line}"
         print(announcement)
-
 
         # Run the variants.
         for var in variants:
@@ -385,19 +384,36 @@ class ExperimentGrid(object):
             print("Running experiment:", exp_name)
 
             thunk_plus = create_experiment(
-                exp_name, thunk, log_dir=log_dir, datestamp=datestamp,
-                format_strs=format_strs.split(','), **var
+                exp_name,
+                thunk,
+                log_dir=log_dir,
+                datestamp=datestamp,
+                format_strs=format_strs.split(","),
+                **var,
             )
             # Prepare to launch a script to run the experiment
             pickled_thunk = cloudpickle.dumps(thunk_plus)
-            encoded_thunk = base64.b64encode(zlib.compress(pickled_thunk)).decode('utf-8')
+            encoded_thunk = base64.b64encode(zlib.compress(pickled_thunk)).decode(
+                "utf-8"
+            )
 
-            entrypoint = osp.join(osp.abspath(osp.dirname(__file__)),'run_entrypoint.py')
-            cmd = [sys.executable if sys.executable else 'python', entrypoint, encoded_thunk]
+            entrypoint = osp.join(
+                osp.abspath(osp.dirname(__file__)), "run_entrypoint.py"
+            )
+            cmd = [
+                sys.executable if sys.executable else "python",
+                entrypoint,
+                encoded_thunk,
+            ]
             try:
                 subprocess.check_call(cmd, env=os.environ)
             except CalledProcessError:
-                err_msg = '\n'*3 + '='*DIV_LINE_WIDTH + '\n' + dedent("""
+                err_msg = (
+                    "\n" * 3
+                    + "=" * DIV_LINE_WIDTH
+                    + "\n"
+                    + dedent(
+                        """
 
                 There appears to have been an error in your experiment.
 
@@ -406,6 +422,10 @@ class ExperimentGrid(object):
                 for diagnosing the error), shows the stack leading up to the
                 experiment launch.
 
-                """) + '='*DIV_LINE_WIDTH + '\n'*3
+                """
+                    )
+                    + "=" * DIV_LINE_WIDTH
+                    + "\n" * 3
+                )
                 print(err_msg)
                 raise
