@@ -119,7 +119,7 @@ if __name__ == "__main__":
         "td3",
         "sac",
     ]
-    valid_utils = ["plot", "sim_policy", "record_policy"]
+    valid_utils = ["viskit/frontend", "plot", "sim_policy", "record_policy"]
     valid_cmds = valid_algos + valid_utils
     assert (
         cmd in valid_cmds
@@ -131,8 +131,6 @@ if __name__ == "__main__":
 
     elif cmd in valid_utils:
         # Execute the correct utility file.
-        if cmd == "plot":
-            cmd = osp.join("viskit", "frontend")
         runfile = osp.join(osp.abspath(osp.dirname(__file__)), "utils", cmd + ".py")
         args = [sys.executable if sys.executable else "python", runfile] + sys.argv[2:]
         subprocess.check_call(args, env=os.environ)
