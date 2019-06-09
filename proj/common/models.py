@@ -1,3 +1,6 @@
+"""
+Collection of neural network models, policies and value functions in PyTorch.
+"""
 import math
 import torch
 import torch.nn as nn
@@ -7,20 +10,24 @@ import proj.common.distributions as dists
 from abc import ABC, abstractmethod
 from proj.utils.torch_util import ToFloat, Concat, OneHot, Flatten
 
+
 # ==============================
 # Models
 # ==============================
-
 class Model(nn.Module):
     def __init__(self, env, concat_action=False, **kwargs):
         super().__init__()
         self.ob_space = ob_space = env.observation_space
         if concat_action:
             self.ac_space = ac_space = env.action_space
-            assert all((
-                isinstance(ac_space, spaces.Box), len(ac_space.shape) == 1,
-                isinstance(ob_space, spaces.Box), len(ob_space.shape) == 1
-            )), "Currently only supports concatenating continuous spaces"
+            assert all(
+                (
+                    isinstance(ac_space, spaces.Box),
+                    len(ac_space.shape) == 1,
+                    isinstance(ob_space, spaces.Box),
+                    len(ob_space.shape) == 1,
+                )
+            ), "Currently only supports concatenating continuous spaces"
             self.in_features = np.prod(ob_space.shape) + np.prod(ac_space.shape)
             self.process_input = Concat(ob_space.dtype.type)
         elif isinstance(ob_space, spaces.Box):
@@ -28,9 +35,9 @@ class Model(nn.Module):
             self.process_input = ToFloat(ob_space.dtype.type)
         elif isinstance(ob_space, spaces.Discrete):
             self.in_features = ob_space.n
-            self.process_input = OneHot(space.n)
+            self.process_input = OneHot(ob_space.n)
         else:
-            raise ValueError("{} is not a valid space type".format(str(space)))
+            raise ValueError("{} is not a valid space type".format(str(ob_space)))
 
     def forward(self, *args):
         return self.process_input(*args)
@@ -45,23 +52,21 @@ class FeedForwardModel(ABC):
 
 
 class MlpModel(Model, FeedForwardModel):
-    def __init__(self, env, *, hidden_sizes=[32, 32], activation='elu',
-                 **kwargs):
+    def __init__(self, env, *, hidden_sizes=(32, 32), activation="elu", **kwargs):
         super().__init__(env, **kwargs)
         if isinstance(activation, str):
-            if activation == 'tanh':
+            if activation == "tanh":
                 activation = nn.Tanh
-            elif activation == 'relu':
+            elif activation == "relu":
                 activation = nn.ReLU
-            elif activation == 'elu':
+            elif activation == "elu":
                 activation = nn.ELU
             else:
                 raise ValueError(
-                    "Invalid string option '{}' for activation".format(
-                        activation
-                    ))
+                    "Invalid string option '{}' for activation".format(activation)
+                )
         self.activation = activation
-        self.hidden_sizes = hidden_sizes
+        self.hidden_sizes = hidden_sizes = list(hidden_sizes)
 
         layers, in_sizes = [], [self.in_features] + hidden_sizes
         for in_features, out_features in zip(in_sizes[:-1], in_sizes[1:]):
@@ -76,6 +81,7 @@ class MlpModel(Model, FeedForwardModel):
             if isinstance(module, nn.Linear):
                 nn.init.orthogonal_(module.weight, gain=math.sqrt(2))
                 nn.init.constant_(module.bias, 0)
+
         self.hidden_net.apply(initialize)
 
     def forward(self, *args):
@@ -94,15 +100,15 @@ class CNNModel(Model, FeedForwardModel):
             nn.ReLU(),
             Flatten(2592),
             nn.Linear(2592, 256),
-            nn.ReLU()
+            nn.ReLU(),
         )
         self.out_features = 256
 
         def initialize(module):
             if isinstance(module, (nn.Conv2d, nn.Linear)):
-                nn.init.orthogonal_(
-                    module.weight, gain=nn.init.calculate_gain('relu'))
+                nn.init.orthogonal_(module.weight, gain=nn.init.calculate_gain("relu"))
                 nn.init.constant_(module.bias, 0)
+
         self.hidden_net.apply(initialize)
 
     def forward(self, obs):
@@ -114,10 +120,10 @@ class CNNModel(Model, FeedForwardModel):
         # Remove batch dim for single observations
         return feats.squeeze(0)
 
+
 # ==============================
 # Policies
 # ==============================
-
 class Policy(ABC):
     ac_space = None
 
@@ -152,8 +158,9 @@ class FeedForwardPolicy(FeedForwardModel, Policy):
     def __init__(self, env, clamp_acts=False, indep_std=True, **kwargs):
         super().__init__(env, **kwargs)
         self.ac_space = env.action_space
-        self.pdtype = dists.pdtype(self.ac_space, self.out_features,
-                                   clamp_acts=clamp_acts, indep_std=indep_std)
+        self.pdtype = dists.pdtype(
+            self.ac_space, self.out_features, clamp_acts=clamp_acts, indep_std=indep_std
+        )
 
     def forward(self, obs):
         return self.pdtype(super().forward(obs))
@@ -171,6 +178,7 @@ class DeterministicPolicy(ABC):
     """
     Limited to continuous action spaces
     """
+
     ac_space = None
 
     @abstractmethod
@@ -199,20 +207,21 @@ class DeterministicPolicy(ABC):
 
 class FeedForwardDeterministicPolicy(FeedForwardModel, DeterministicPolicy):
     def __init__(self, env, **kwargs):
-        assert isinstance(env.action_space, spaces.Box), \
-            "Deterministic policies only handle continuous action spaces"
+        assert isinstance(
+            env.action_space, spaces.Box
+        ), "Deterministic policies only handle continuous action spaces"
         super().__init__(env, **kwargs)
         self.ac_space = env.action_space
         self.act_layer = nn.Linear(self.out_features, self.ac_space.shape[-1])
         self.act_activ = nn.Tanh()
         low, high = map(torch.Tensor, (self.ac_space.low, self.ac_space.high))
-        self.loc = (high+low) / 2
-        self.scale = (high-low) / 2
+        self.loc = (high + low) / 2
+        self.scale = (high - low) / 2
 
     def forward(self, obs):
         feats = super().forward(obs)
         tanh = self.act_activ(self.act_layer(feats))
-        return self.loc + tanh*self.scale
+        return self.loc + tanh * self.scale
 
 
 class MlpDeterministicPolicy(FeedForwardDeterministicPolicy, MlpModel):
@@ -222,10 +231,10 @@ class MlpDeterministicPolicy(FeedForwardDeterministicPolicy, MlpModel):
 class CNNDeterministicPolicy(FeedForwardDeterministicPolicy, CNNModel):
     pass
 
+
 # ==============================
 # Value Functions
 # ==============================
-
 class ValueFunction(ABC):
     @abstractmethod
     def forward(self, obs):
@@ -241,14 +250,14 @@ class ValueFunction(ABC):
 
     @staticmethod
     def from_policy(policy):
-        pol_type = policy['class']
+        pol_type = policy["class"]
         if issubclass(pol_type, MlpModel):
-            kwargs = {'class': MlpValueFunction, 'activation': nn.ELU}
-            if 'hidden_sizes' in policy:
-                kwargs['hidden_sizes'] = policy['hidden_sizes']
+            kwargs = {"class": MlpValueFunction, "activation": nn.ELU}
+            if "hidden_sizes" in policy:
+                kwargs["hidden_sizes"] = policy["hidden_sizes"]
             return kwargs
         elif issubclass(pol_type, CNNModel):
-            return {'class': CNNValueFunction}
+            return {"class": CNNValueFunction}
         else:
             raise ValueError("Unrecognized policy type")
 
@@ -259,7 +268,7 @@ class ZeroValueFunction(Model, ValueFunction):
         self.dummy = nn.Parameter(torch.zeros([]))
 
     def forward(self, obs):
-        batch_dims = obs.shape[:len(obs.shape) - len(self.ob_space.shape)]
+        batch_dims = obs.shape[: len(obs.shape) - len(self.ob_space.shape)]
         return torch.zeros(batch_dims, requires_grad=True)
 
 
@@ -293,11 +302,11 @@ class ContinuousQFunction(ABC):
 
     @staticmethod
     def from_policy(policy):
-        pol_type = policy['class']
+        pol_type = policy["class"]
         if issubclass(pol_type, MlpModel):
-            kwargs = {'class': MlpContinuousQFunction, 'activation': nn.ReLU}
-            if 'hidden_sizes' in policy:
-                kwargs['hidden_sizes'] = policy['hidden_sizes']
+            kwargs = {"class": MlpContinuousQFunction, "activation": nn.ReLU}
+            if "hidden_sizes" in policy:
+                kwargs["hidden_sizes"] = policy["hidden_sizes"]
             return kwargs
         else:
             raise ValueError("Unrecognized policy type")
@@ -317,10 +326,10 @@ class FeedForwardContinuousQFunction(FeedForwardModel, ContinuousQFunction):
 class MlpContinuousQFunction(FeedForwardContinuousQFunction, MlpModel):
     pass
 
+
 # ==============================
 # Weight sharing models
 # ==============================
-
 class WeightSharingAC(ABC):
     ac_space = None
 
