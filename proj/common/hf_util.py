@@ -1,10 +1,10 @@
+"""
+Hessian-free optimization utilities
+"""
 import torch
 from torch.distributions.kl import kl_divergence
 from proj.utils.torch_util import flat_grad
 
-# ==============================
-# Hessian-free optimization util
-# ==============================
 
 def fisher_vec_prod(v, obs, policy, damping=1e-3):
     dists = policy(obs)
@@ -14,7 +14,7 @@ def fisher_vec_prod(v, obs, policy, damping=1e-3):
     return fvp + v * damping
 
 
-def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
+def conjugate_gradient(f_mat_vec_prod, b, cg_iters=10, residual_tol=1e-10):
     """
     Demmel p 312. Approximately solve x = A^{-1}b, or Ax = b,
     where we only have access to f: x -> Ax
@@ -22,14 +22,14 @@ def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
     p = b.clone()
     r = b.clone()
     x = torch.zeros_like(b)
-    rdotr = torch.dot(r,r)
+    rdotr = torch.dot(r, r)
 
-    for i in range(cg_iters):
-        z = f_Ax(p)
-        v = rdotr / torch.dot(p,z)
+    for _ in range(cg_iters):
+        z = f_mat_vec_prod(p)
+        v = rdotr / torch.dot(p, z)
         x += v * p
         r -= v * z
-        newrdotr = torch.dot(r,r)
+        newrdotr = torch.dot(r, r)
         mu = newrdotr / rdotr
         p = r + mu * p
         rdotr = newrdotr
@@ -40,8 +40,17 @@ def conjugate_gradient(f_Ax, b, cg_iters=10, residual_tol=1e-10):
 
 
 @torch.no_grad()
-def line_search(f, x0, dx, expected_improvement, y0=None, accept_ratio=0.1,
-                backtrack_ratio=0.8, max_backtracks=15, atol=1e-7):
+def line_search(
+    f,
+    x0,
+    dx,
+    expected_improvement,
+    y0=None,
+    accept_ratio=0.1,
+    backtrack_ratio=0.8,
+    max_backtracks=15,
+    atol=1e-7,
+):
     if y0 is None:
         y0 = f(x0)
 
