@@ -1,6 +1,6 @@
 # deep-rl
-PyTorch implementation of reinforcement learning algorithms. Many of the algorithms and utilities are based on the excellent 
-materials provided by the [Berkley DeepRL Bootcamp](https://sites.google.com/view/deep-rl-bootcamp/home?authuser=0) and 
+PyTorch implementation of reinforcement learning algorithms. Many of the algorithms and utilities are based on the excellent
+materials provided by the [Berkley DeepRL Bootcamp](https://sites.google.com/view/deep-rl-bootcamp/home?authuser=0) and
 OpenAI's [SpinningUp](https://spinningup.openai.com/en/latest/).
 
 ## Requirements
@@ -27,12 +27,12 @@ Experiment results are saved under `data/<exp_name>` by default.
 
 ## Utilities
 
-You can simulate/record trained policies and plot experiment results. These utilities use 
+You can simulate/record trained policies and plot experiment results. These utilities use
 [click](https://click.palletsprojects.com/en/7.x/) to handle command line arguments and can be run as follows.
 ```bash
 # using one of <sim_policy,record_policy,plot> in UTIL
 python -m proj.run UTIL [OPTIONS] ARGS
-# to get help with arguments 
+# to get help with arguments
 python -m proj.run UTIL --help
 ```
 
@@ -68,5 +68,5 @@ python -m proj.run td3 --env HalfCheetah-v2 --policy:class MlpDeterministicPolic
 
 ### Soft Actor-Critic
 ```bash
-python -m proj.run sac2 --env Ant-v2 --policy:class MlpPolicy False --policy:hidden_sizes [256,256] --policy:activation relu --policy:indep_std --policy:clamp_acts --total_samples 'int(3e6)' --save_interval 1 --epoch 10000 --lr 3e-4 --mb_size 256 --target_entropy auto
+python -m proj.run sac --env Ant-v2 --policy:class MlpPolicy --policy:hidden_sizes [256,256] --policy:activation relu --policy:indep_std False --policy:clamp_acts --total_samples 'int(3e6)' --save_interval 1 --epoch 10000 --lr 3e-4 --mb_size 256 --target_entropy auto
 ```
