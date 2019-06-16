@@ -4,13 +4,17 @@ import itertools
 from math import sqrt
 from functools import reduce
 from contextlib import nullcontext
-from collections import OrderedDict
+from collections import OrderedDict, namedtuple
 
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+
+
+ExperimentData = namedtuple("ExperimentData", ["progress", "params", "flat_params"])
+Folder = namedtuple("Folder", ["path", "files"])
 
 
 def latexify(fig_width=None, fig_height=None, columns=1, max_height_inches=8.0):
@@ -59,12 +63,6 @@ def latexify(fig_width=None, fig_height=None, columns=1, max_height_inches=8.0):
     return matplotlib.rc_context(rc=new_params)
 
 
-class AttrDict(dict):
-    def __init__(self, *args, **kwargs):
-        super(AttrDict, self).__init__(*args, **kwargs)
-        self.__dict__ = self
-
-
 def load_progress(progress_path, verbose=True):
     if verbose:
         print("Reading %s" % progress_path)
@@ -102,21 +100,24 @@ def load_params(params_json_path):
 
 
 def first_that(criterion, lis):
-    return next(x for x in lis if criterion(x))
+    return next((x for x in lis if criterion(x)), None)
 
 
-def exp_folder_paths(directories, isprogress):
+def get_exp_folders(directories, isprogress):
     return list(
-        filter(  # entries that have progress files
-            lambda x: any(isprogress(y) for y in x[1]),
-            filter(  # entries that have >0 files
-                lambda x: x[1],
-                map(  # only (path, files)
-                    lambda x: (x[0], x[2]),
-                    reduce(  # (path, subpath, files) for all dirs
-                        itertools.chain,
-                        map(  # (path, subpath, files) for each dir
-                            os.walk, directories
+        map(  # Folders with at least one progress file
+            lambda x: Folder(*x),
+            filter(  # entries that have progress files
+                lambda x: any(isprogress(y) for y in x[1]),
+                filter(  # entries that have >0 files
+                    lambda x: x[1],
+                    map(  # only (path, files)
+                        lambda x: (x[0], x[2]),
+                        reduce(  # (path, subpath, files) for all dirs
+                            itertools.chain,
+                            map(  # (path, subpath, files) for each dir
+                                os.walk, directories
+                            ),
                         ),
                     ),
                 ),
@@ -125,20 +126,20 @@ def exp_folder_paths(directories, isprogress):
     )
 
 
-def read_exp_path_data(exp_paths, isprogress, isconfig, verbose=False):
+def read_exp_folder_data(exp_folders, isprogress, isconfig, verbose=False):
     exps_data = []
-    for exp_path, files in exp_paths:
+    for path, files in exp_folders:
         try:
-            progress_path = os.path.join(exp_path, first_that(isprogress, files))
+            progress_path = os.path.join(path, first_that(isprogress, files))
             progress = load_progress(progress_path, verbose=verbose)
-            if any(isconfig(file) for file in files):
-                params = load_params(
-                    os.path.join(exp_path, first_that(isconfig, files))
-                )
-            else:
-                params = dict(exp_name="experiment")
+            params_file = first_that(isconfig, files)
+            params = (
+                load_params(os.path.join(path, params_file))
+                if params_file is not None
+                else dict(exp_name="experiment")
+            )
             exps_data.append(
-                AttrDict(
+                ExperimentData(
                     progress=progress, params=params, flat_params=flatten_dict(params)
                 )
             )
@@ -150,11 +151,7 @@ def read_exp_path_data(exp_paths, isprogress, isconfig, verbose=False):
 
 
 def load_exps_data(
-    directories,
-    progress_prefix="progress",
-    config_prefix="variant",
-    ignore_missing_keys=True,
-    verbose=False,
+    directories, progress_prefix="progress", config_prefix="variant", verbose=False
 ):
     if isinstance(directories, str):
         directories = [directories]
@@ -165,30 +162,13 @@ def load_exps_data(
     def isconfig(file):
         return file.startswith(config_prefix)
 
-    exp_paths = exp_folder_paths(directories, isprogress)
+    exp_folders = get_exp_folders(directories, isprogress)
     if verbose:
         print("finished walking exp folders")
 
-    exps_data = read_exp_path_data(exp_paths, isprogress, isconfig, verbose=verbose)
+    exps_data = read_exp_folder_data(exp_folders, isprogress, isconfig, verbose=verbose)
     for num, exp_data in enumerate(exps_data):
         exp_data.progress.insert(len(exp_data.progress.columns), "unit", num)
-
-    # if any data does not have some key, specify the value of it
-    if not ignore_missing_keys:
-        # a dictionary of all keys and types of values
-        all_keys = {
-            key: type(data.flat_params[key])
-            for data in exps_data
-            for key in data.flat_params.keys()
-        }
-
-        default_values = dict()
-        for data in exps_data:
-            for key in sorted(all_keys.keys()):
-                if key not in data.flat_params:
-                    if key not in default_values:
-                        default_values[key] = None
-                    data.flat_params[key] = default_values[key]
 
     return exps_data
 
@@ -225,8 +205,7 @@ def extract_distinct_params(exps_data, excluded_params=("seed", "log_dir")):
     filtered = [
         (k, v)
         for (k, v) in proposals
-        if len(v) > 1
-        and all([k.find(excluded_param) != 0 for excluded_param in excluded_params])
+        if len(v) > 1 and all(k != excluded_param for excluded_param in excluded_params)
     ]
     return filtered
 
@@ -263,9 +242,9 @@ def lineplot_instructions(
     selector = Selector(exps_data)
     include, exclude = include or [], exclude or []
     for key, val in include:
-        selector = selector.where(key, str(val))
+        selector = selector.where(key, val)
     for key, val in exclude:
-        selector = selector.where_not(key, str(val))
+        selector = selector.where_not(key, val)
 
     if split is not None:
         values = dict(sorted(extract_distinct_params(exps_data))).get(split, [])
@@ -291,30 +270,32 @@ def lineplot_instructions(
         )
 
         plots.append(
-            AttrDict(
-                title=split_title,
-                lineplot_kwargs=AttrDict({**lineplot_kwargs, **split_kwargs}),
-            )
+            dict(title=split_title, lineplot_kwargs={**lineplot_kwargs, **split_kwargs})
         )
     return plots
 
 
 def format_latex_dict(dictionary):
     new_items = []
+    problematic_keys = []
     for key, val in dictionary.items():
         new_key, new_val = key, val
-        if isinstance(key, str):
+        if isinstance(key, str) and "_" in key:
+            problematic_keys.append(key)
             new_key = key.replace("_", "-")
         if isinstance(val, str):
             new_val = val.replace("_", "-")
         new_items.append((new_key, new_val))
-    return dict(new_items)
+
+    for key in problematic_keys:
+        del dictionary[key]
+    dictionary.update(new_items)
 
 
 def format_latex_params(exps_data):
     for exp_data in exps_data:
-        exp_data.flat_params = format_latex_dict(exp_data.flat_params)
-        exp_data.params = format_latex_dict(exp_data.params)
+        format_latex_dict(exp_data.flat_params)
+        format_latex_dict(exp_data.params)
 
 
 def substitute_key(dictionary, key, subs_key):
@@ -353,7 +334,7 @@ def main():
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("logdir", nargs="*")
+    parser.add_argument("logdir", nargs="+")
     parser.add_argument("--xaxis", "-x", default="TotalNSamples")
     parser.add_argument("--yaxis", "-y", default="AverageReturn")
     parser.add_argument("--hue", default=None)
@@ -367,20 +348,11 @@ def main():
     parser.add_argument("--subsval", nargs="*")
     parser.add_argument("--context", default="paper")
     parser.add_argument("--axstyle", default="darkgrid")
+    parser.add_argument("--latex", action="store_true")
     parser.add_argument("--latexcol", type=int, default=2)
-    parser.add_argument("--nolatex", action="store_true")
     parser.add_argument("--saveonly", action="store_true")
     parser.add_argument("--fccolor", default="#F5F5F5")  # http://latexcolor.com (Snow)
     args = parser.parse_args()
-
-    if not args.nolatex:
-        matplotlib.rcParams.update(
-            {
-                "backend": "ps",
-                "text.latex.preamble": ["\\usepackage{gensymb}"],
-                "text.usetex": True,
-            }
-        )
 
     include, exclude, subskey, subsval = [
         [pair.split(":") for pair in pairs] if pairs else []
@@ -406,19 +378,30 @@ def main():
         units="unit" if args.estimator is None else None,
     )
 
+    if args.latex:
+        matplotlib.rcParams.update(
+            {
+                "backend": "ps",
+                "text.latex.preamble": ["\\usepackage{gensymb}"],
+                "text.usetex": True,
+            }
+        )
     plotting_context = sns.plotting_context(args.context)
     axes_style = sns.axes_style(args.axstyle)
-    latex_style = nullcontext() if args.nolatex else latexify(columns=args.latexcol)
+    latex_style = latexify(columns=args.latexcol) if args.latex else nullcontext()
     with plotting_context, axes_style, latex_style:
         for idx, plot_inst in enumerate(plot_instructions):
             print("Dataframe for figure {idx}:".format(idx=idx))
-            print(plot_inst.lineplot_kwargs.data.head())
+            print(plot_inst["lineplot_kwargs"]["data"].head())
 
             plt.figure(facecolor=args.fccolor)
-            plt.title(plot_inst.title)
-            sns.lineplot(legend="full", **plot_inst.lineplot_kwargs)
+            plt.title(plot_inst["title"])
+            sns.lineplot(legend="full", **plot_inst["lineplot_kwargs"])
 
-            if np.max(np.asarray(plot_inst.lineplot_kwargs.data[args.xaxis])) > 5e3:
+            if (
+                np.max(np.asarray(plot_inst["lineplot_kwargs"]["data"][args.xaxis]))
+                > 5e3
+            ):
                 # Just some formatting niceness:
                 # x-axis scale in scientific notation if max x is large
                 plt.ticklabel_format(style="sci", axis="x", scilimits=(0, 0))
