@@ -16,9 +16,12 @@ repos:
       - id: commitlint
         stages: [commit-msg]
         additional_dependencies: ['@commitlint/config-conventional']
-    - repo: https://github.com/pre-commit/mirrors-pylint
-      rev: v2.3.1
+    - repo: local
       hooks:
       - id: pylint
-        args: [-E]
+        name: pylint
+        entry: python -m pylint.__main__
+        language: system
+        types: [python]
         stages: [commit]
+        args: [-E]
