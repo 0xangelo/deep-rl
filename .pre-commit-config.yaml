@@ -5,6 +5,7 @@ repos:
       - id: black
         stages: [commit]
         language_version: python3.7
+        args: [--check]
     - repo: https://gitlab.com/pycqa/flake8
       rev: 3.7.7
       hooks:
