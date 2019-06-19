@@ -14,8 +14,7 @@ class RandomCartPoleEnv(CartPoleEnv):
             action,
             type(action),
         )
-        state = self.state
-        x, x_dot, theta, theta_dot = state
+        x_pos, x_dot, theta, theta_dot = self.state
         force = self.force_mag if action == 1 else -self.force_mag
         # === New code: add gaussian noise ===
         force += force * self.np_random.normal(scale=self.noise_scale)
@@ -29,25 +28,24 @@ class RandomCartPoleEnv(CartPoleEnv):
             self.length
             * (4.0 / 3.0 - self.masspole * costheta * costheta / self.total_mass)
         )
-        xacc = temp - self.polemass_length * thetaacc * costheta / self.total_mass
+        x_acc = temp - self.polemass_length * thetaacc * costheta / self.total_mass
         if self.kinematics_integrator == "euler":
-            x = x + self.tau * x_dot
-            x_dot = x_dot + self.tau * xacc
+            x_pos = x_pos + self.tau * x_dot
+            x_dot = x_dot + self.tau * x_acc
             theta = theta + self.tau * theta_dot
             theta_dot = theta_dot + self.tau * thetaacc
         else:  # semi-implicit euler
-            x_dot = x_dot + self.tau * xacc
-            x = x + self.tau * x_dot
+            x_dot = x_dot + self.tau * x_acc
+            x_pos = x_pos + self.tau * x_dot
             theta_dot = theta_dot + self.tau * thetaacc
             theta = theta + self.tau * theta_dot
-        self.state = (x, x_dot, theta, theta_dot)
-        done = (
-            x < -self.x_threshold
-            or x > self.x_threshold
+        self.state = (x_pos, x_dot, theta, theta_dot)
+        done = bool(
+            x_pos < -self.x_threshold
+            or x_pos > self.x_threshold
             or theta < -self.theta_threshold_radians
             or theta > self.theta_threshold_radians
         )
-        done = bool(done)
 
         if not done:
             reward = 1.0
