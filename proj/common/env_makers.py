@@ -88,7 +88,7 @@ class VecEnvMaker:
 class DummyVecEnv(_DummyVecEnv):
     """
     Extends baselines.common.vec_env.dummy_vec_env.DummyVecEnv to allow seeding
-    and perform it on initialization.
+    and perform it on initialization. Plus, properly cleans up when closed.
     """
 
     def __init__(self, *args, **kwargs):
@@ -102,6 +102,10 @@ class DummyVecEnv(_DummyVecEnv):
     def seed(self, seeds):
         for env, seed in zip(self.envs, seeds):
             env.seed(int(seed))
+
+    def close_extras(self):
+        for env in self.envs:
+            env.close()
 
 
 # ==============================
