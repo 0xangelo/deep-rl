@@ -143,5 +143,6 @@ class AddRelativeTimestep(gym.ObservationWrapper):
 
     def observation(self, observation):
         return np.append(
-            observation, -1 + (self.env._elapsed_steps / self.spec.timestep_limit) * 2
+            observation,
+            -1 + (self.env._elapsed_steps / self.spec.max_episode_steps) * 2,
         )
