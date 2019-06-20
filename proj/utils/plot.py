@@ -1,11 +1,13 @@
 import os
 import json
 import itertools
+from ast import literal_eval
 from math import sqrt
 from functools import reduce
 from contextlib import nullcontext
-from collections import OrderedDict, namedtuple
+from collections import namedtuple
 
+import click
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -118,6 +120,7 @@ def get_exp_folders(directories, isprogress):
                             map(  # (path, subpath, files) for each dir
                                 os.walk, directories
                             ),
+                            (),
                         ),
                     ),
                 ),
@@ -192,7 +195,7 @@ def extract_distinct_params(exps_data, excluded_params=("seed", "log_dir")):
         smart_repr(kv) for d in exps_data for kv in d.flat_params.items()
     ]
     uniq_pairs = list(set(repr_config_pairs))
-    evald_pairs = map(eval, uniq_pairs)
+    evald_pairs = map(literal_eval, uniq_pairs)
     stringified_pairs = sorted(
         evald_pairs, key=lambda x: tuple("" if it is None else str(it) for it in x)
     )
@@ -237,19 +240,17 @@ class Selector:
 
 
 def lineplot_instructions(
-    exps_data, split=None, include=None, exclude=None, **lineplot_kwargs
+    exps_data, split=None, include=(), exclude=(), **lineplot_kwargs
 ):
     selector = Selector(exps_data)
-    include, exclude = include or [], exclude or []
     for key, val in include:
         selector = selector.where(key, val)
     for key, val in exclude:
         selector = selector.where_not(key, val)
 
     if split is not None:
-        values = dict(sorted(extract_distinct_params(exps_data))).get(split, [])
-        split_selectors = [selector.where(split, v) for v in values]
-        split_titles = list(map(str, values))
+        split_titles = dict(sorted(extract_distinct_params(exps_data))).get(split, [])
+        split_selectors = [selector.where(split, t) for t in split_titles]
     else:
         split_selectors = [selector]
         split_titles = ["Experiment"]
@@ -260,17 +261,22 @@ def lineplot_instructions(
         if not split_exps_data:
             continue
 
-        dataframes = [exp.progress for exp in split_exps_data]
-        distinct_params = OrderedDict(sorted(extract_distinct_params(split_exps_data)))
-        split_kwargs = dict(
-            data=pd.concat(dataframes, ignore_index=True, sort=False),
-            hue_order=distinct_params.get(lineplot_kwargs.get("hue")),
-            size_order=distinct_params.get(lineplot_kwargs.get("size")),
-            style_order=distinct_params.get(lineplot_kwargs.get("style")),
-        )
-
+        distinct_params = dict(sorted(extract_distinct_params(split_exps_data)))
         plots.append(
-            dict(title=split_title, lineplot_kwargs={**lineplot_kwargs, **split_kwargs})
+            dict(
+                title=str(split_title),
+                lineplot_kwargs=dict(
+                    data=pd.concat(
+                        [exp.progress for exp in split_exps_data],
+                        ignore_index=True,
+                        sort=False,
+                    ),
+                    hue_order=distinct_params.get(lineplot_kwargs.get("hue")),
+                    size_order=distinct_params.get(lineplot_kwargs.get("size")),
+                    style_order=distinct_params.get(lineplot_kwargs.get("style")),
+                    **lineplot_kwargs,
+                ),
+            )
         )
     return plots
 
@@ -311,15 +317,19 @@ def substitute_val(dictionary, val, subs_val):
             dictionary[key] = subs_val
 
 
-def rename_params(exps_data, subskey=None, subsval=None):
-    subskey = subskey or []
-    subsval = subsval or []
+def rename_params(exps_data, subskey=(), subsval=()):
+    def process(arg):
+        try:
+            return literal_eval(arg)
+        except ValueError:
+            return arg
+
     for exp_data in exps_data:
         for key, subs_key in subskey:
-            substitute_key(exp_data.flat_params, key, subs_key)
+            substitute_key(exp_data.flat_params, key, process(subs_key))
             substitute_key(exp_data.params, key, subs_key)
         for val, subs_val in subsval:
-            substitute_val(exp_data.flat_params, val, subs_val)
+            substitute_val(exp_data.flat_params, val, process(subs_val))
             substitute_val(exp_data.params, val, subs_val)
 
 
@@ -330,55 +340,54 @@ def insert_params_dataframe(exps_data, *param_keys):
             dataframe.insert(len(dataframe.columns), str(key), params[key])
 
 
-def main():
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("logdir", nargs="+")
-    parser.add_argument("--xaxis", "-x", default="TotalNSamples")
-    parser.add_argument("--yaxis", "-y", default="AverageReturn")
-    parser.add_argument("--hue", default=None)
-    parser.add_argument("--size", default=None)
-    parser.add_argument("--style", default=None)
-    parser.add_argument("--estimator", default="mean")
-    parser.add_argument("--split", default=None)
-    parser.add_argument("--include", nargs="*")
-    parser.add_argument("--exclude", nargs="*")
-    parser.add_argument("--subskey", nargs="*")
-    parser.add_argument("--subsval", nargs="*")
-    parser.add_argument("--context", default="paper")
-    parser.add_argument("--axstyle", default="darkgrid")
-    parser.add_argument("--latex", action="store_true")
-    parser.add_argument("--latexcol", type=int, default=2)
-    parser.add_argument("--saveonly", action="store_true")
-    parser.add_argument("--fccolor", default="#F5F5F5")  # http://latexcolor.com (Snow)
-    args = parser.parse_args()
-
-    include, exclude, subskey, subsval = [
-        [pair.split(":") for pair in pairs] if pairs else []
-        for pairs in (args.include, args.exclude, args.subskey, args.subsval)
-    ]
-
-    exps_data = load_exps_data(args.logdir)
+@click.command()
+@click.argument("logdir", nargs=-1)
+@click.option("--xaxis", "-x", "x", default="TotalNSamples", show_default=True)
+@click.option("--yaxis", "-y", "y", default="AverageReturn", show_default=True)
+@click.option("--hue", default=None)
+@click.option("--size", default=None)
+@click.option("--style", default=None)
+@click.option("--estimator", default="mean", show_default=True)
+@click.option("--units", is_flag=True)
+@click.option("--split", default=None)
+@click.option("--include", "-i", type=(str, str), multiple=True)
+@click.option("--exclude", "-e", type=(str, str), multiple=True)
+@click.option("--subskey", "-k", type=(str, str), multiple=True)
+@click.option("--subsval", "-v", type=(str, str), multiple=True)
+@click.option("--context", default="paper", show_default=True)
+@click.option("--axstyle", default="darkgrid", show_default=True)
+@click.option("--latex/--no-latex", default=False)
+@click.option("--latexcol", default=2, show_default=True)
+@click.option("--saveonly", is_flag=True)
+@click.option(
+    "--facecolor",
+    "-fc",
+    default="#F5F5F5",
+    show_default=True,
+    help="http://latexcolor.com",
+)
+@click.option("--out", "-o", default="fig.pdf", show_default=True)
+def main(**args):
+    exps_data = load_exps_data(args["logdir"])
     format_latex_params(exps_data)
-    rename_params(exps_data, subskey, subsval)
-    insert_params_dataframe(exps_data, args.hue, args.size, args.style)
+    rename_params(exps_data, args["subskey"], args["subsval"])
+    insert_params_dataframe(exps_data, args["hue"], args["size"], args["style"])
 
     plot_instructions = lineplot_instructions(
         exps_data,
-        split=args.split,
-        include=include,
-        exclude=exclude,
-        x=args.xaxis,
-        y=args.yaxis,
-        hue=args.hue,
-        size=args.size,
-        style=args.style,
-        estimator=args.estimator,
-        units="unit" if args.estimator is None else None,
+        split=args["split"],
+        include=args["include"],
+        exclude=args["exclude"],
+        x=args["x"],
+        y=args["y"],
+        hue=args["hue"],
+        size=args["size"],
+        style=args["style"],
+        estimator=None if args["units"] else args["estimator"],
+        units="unit" if args["units"] else None,
     )
 
-    if args.latex:
+    if args["latex"]:
         matplotlib.rcParams.update(
             {
                 "backend": "ps",
@@ -386,20 +395,20 @@ def main():
                 "text.usetex": True,
             }
         )
-    plotting_context = sns.plotting_context(args.context)
-    axes_style = sns.axes_style(args.axstyle)
-    latex_style = latexify(columns=args.latexcol) if args.latex else nullcontext()
+    plotting_context = sns.plotting_context(args["context"])
+    axes_style = sns.axes_style(args["axstyle"])
+    latex_style = latexify(columns=args["latexcol"]) if args["latex"] else nullcontext()
     with plotting_context, axes_style, latex_style:
         for idx, plot_inst in enumerate(plot_instructions):
             print("Dataframe for figure {idx}:".format(idx=idx))
             print(plot_inst["lineplot_kwargs"]["data"].head())
 
-            plt.figure(facecolor=args.fccolor)
+            plt.figure(facecolor=args["facecolor"])
             plt.title(plot_inst["title"])
             sns.lineplot(legend="full", **plot_inst["lineplot_kwargs"])
 
             if (
-                np.max(np.asarray(plot_inst["lineplot_kwargs"]["data"][args.xaxis]))
+                np.max(np.asarray(plot_inst["lineplot_kwargs"]["data"][args["x"]]))
                 > 5e3
             ):
                 # Just some formatting niceness:
@@ -407,8 +416,8 @@ def main():
                 plt.ticklabel_format(style="sci", axis="x", scilimits=(0, 0))
             plt.tight_layout(pad=0.5)
 
-        if args.saveonly:
-            plt.savefig("fig.pdf", facecolor=args.fccolor)
+        if args["saveonly"]:
+            plt.savefig(args["out"], facecolor=args["facecolor"])
         else:
             plt.show()
 
