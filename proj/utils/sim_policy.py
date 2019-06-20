@@ -1,5 +1,7 @@
 import time
 import pprint
+from contextlib import suppress
+
 import click
 import torch
 from baselines import logger
@@ -10,54 +12,61 @@ from proj.common.env_makers import VecEnvMaker
 
 @click.command()
 @click.argument("path")
-@click.option("--index", help="Wich checkpoint to load from", type=int, default=None)
-@click.option("--runs", help="Number of episodes to simulate", type=int, default=2)
-@click.option("--norender", help="Don't render the simulation on screen", is_flag=True)
+@click.option("--index", type=int, default=None, help="Wich checkpoint to load from")
 @click.option(
-    "--deterministic", help="Use mode of the distributions if applicable", is_flag=True
+    "--render/--no-render",
+    default=True,
+    help="Whether or not to render the simulation on screen",
+)
+@click.option(
+    "--deterministic",
+    "-d",
+    is_flag=True,
+    help="Use mode of the distributions if applicable",
 )
 @click.option(
     "--env",
-    help="Override which environment the policy will be executed in",
-    type=str,
+    "-e",
     default=None,
+    help="Override which environment the policy will be executed in",
 )
-def main(path, index, runs, norender, deterministic, env):
+def main(**args):  # path, index, runs, norender, deterministic, env):
     """
     Loads a snapshot and simulates the corresponding policy and environment.
     """
-
     snapshot = None
-    saver = SnapshotSaver(path)
+    saver = SnapshotSaver(args["path"])
     while snapshot is None:
-        snapshot = saver.get_state(index)
+        snapshot = saver.get_state(args["index"])
         if snapshot is None:
             time.sleep(1)
 
     config, state = snapshot
     pprint.pprint(config)
-    if env is not None:
-        env = VecEnvMaker(env)(train=False)
+    if args["env"] is not None:
+        env = VecEnvMaker(args["env"])(train=False)
     else:
         env = VecEnvMaker(config["env"])(train=False)
     policy = config["policy"].pop("class")(env, **config["policy"])
     policy.load_state_dict(state["policy"])
+    if args["deterministic"]:
+        policy.eval()
 
-    with torch.no_grad():
-        if deterministic:
-            policy.eval()
-        for _ in range(runs):
-            ob = env.reset()
-            done = False
-            while not done:
-                action = policy.actions(torch.from_numpy(ob))
-                ob, _, done, _ = env.step(action.numpy())
-                if not norender:
-                    env.render()
+    with torch.no_grad(), suppress(KeyboardInterrupt):
+        simulate(env, policy, render=args["render"])
 
     env.close()
     log_reward_statistics(env)
     logger.dumpkvs()
+
+
+def simulate(env, policy, render=True):
+    obs = env.reset()
+    while True:
+        action = policy.actions(torch.from_numpy(obs))
+        obs, _, _, _ = env.step(action.numpy())
+        if render:
+            env.render()
 
 
 if __name__ == "__main__":
