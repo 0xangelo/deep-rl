@@ -12,26 +12,22 @@ from gym.utils import seeding
 from gym.envs.classic_control import rendering
 
 
-Physics = namedtuple(
-    "Physics", "gravity masscart masspole polelen forcemag deltat friction"
-)
+Physics = namedtuple("Physics", "gravity forcemag deltat friction")
 
 State = namedtuple("State", "x_pos x_dot theta theta_dot")
 
-Screen = namedtuple("Screen", "width height world_width polewidth cartwidth cartheight")
+Screen = namedtuple("Screen", "width height")
+
+Cart = namedtuple("Cart", "width height mass")
+
+Pole = namedtuple("Pole", "width length mass")
 
 
 class CartPoleSwingUpEnv(gym.Env):
     metadata = {"render.modes": ["human", "rgb_array"], "video.frames_per_second": 50}
-    physics = Physics(
-        gravity=9.82,  # gravity
-        masscart=0.5,  # cart mass
-        masspole=0.5,  # pendulum mass
-        polelen=0.6,  # pole's length
-        forcemag=10.0,
-        deltat=0.01,  # seconds between state updates
-        friction=0.1,  # friction coefficient
-    )
+    physics = Physics(gravity=9.82, forcemag=22.5, deltat=0.01, friction=0.1)
+    cart = Cart(width=0.5, height=0.25, mass=1.125)
+    pole = Pole(width=0.075, length=0.9, mass=1.125)
     thresholds = {
         "theta_radians": 12 * 2 * math.pi / 360,  # Angle at which to fail the episode
         "x_pos": 2.4,  # Distance limit from the center
@@ -59,6 +55,17 @@ class CartPoleSwingUpEnv(gym.Env):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
 
+    def _reward(self):
+        reward_theta = (np.cos(self.state.theta) + 1.0) / 2.0
+        reward_x = np.cos((self.state.x_pos / self.thresholds["x_pos"]) * (np.pi / 2.0))
+        return reward_theta * reward_x
+
+    def _terminal(self):
+        x_pos = self.state.x_pos
+        if x_pos < -self.thresholds["x_pos"] or x_pos > self.thresholds["x_pos"]:
+            return True
+        return False
+
     def step(self, action):
         # Valid action
         action = np.clip(action, -1.0, 1.0)[0]
@@ -70,19 +77,19 @@ class CartPoleSwingUpEnv(gym.Env):
         sin_theta = math.sin(state.theta)
         cos_theta = math.cos(state.theta)
 
-        m_p_l = physics.masspole * physics.polelen
-        masstotal = physics.masscart + physics.masspole
+        m_p_l = self.pole.mass * self.pole.length
+        masstotal = self.cart.mass + self.pole.mass
         xdot_update = (
             -2 * m_p_l * (state.theta_dot ** 2) * sin_theta
-            + 3 * physics.masspole * physics.gravity * sin_theta * cos_theta
+            + 3 * self.pole.mass * physics.gravity * sin_theta * cos_theta
             + 4 * action
             - 4 * physics.friction * state.x_dot
-        ) / (4 * masstotal - 3 * physics.masspole * cos_theta ** 2)
+        ) / (4 * masstotal - 3 * self.pole.mass * cos_theta ** 2)
         thetadot_update = (
             -3 * m_p_l * (state.theta_dot ** 2) * sin_theta * cos_theta
             + 6 * masstotal * physics.gravity * sin_theta
             + 6 * (action - physics.friction * state.x_dot) * cos_theta
-        ) / (4 * physics.polelen * masstotal - 3 * m_p_l * cos_theta ** 2)
+        ) / (4 * self.pole.length * masstotal - 3 * m_p_l * cos_theta ** 2)
 
         self.state = state = State(
             x_pos=state.x_pos + state.x_dot * physics.deltat,
@@ -91,18 +98,7 @@ class CartPoleSwingUpEnv(gym.Env):
             theta_dot=state.theta_dot + thetadot_update * physics.deltat,
         )
 
-        done = False
-        if (
-            state.x_pos < -self.thresholds["x_pos"]
-            or state.x_pos > self.thresholds["x_pos"]
-        ):
-            done = True
-
-        reward_theta = (np.cos(state.theta) + 1.0) / 2.0
-        reward_x = np.cos((state.x_pos / self.thresholds["x_pos"]) * (np.pi / 2.0))
-        reward = reward_theta * reward_x
-
-        return self._get_obs(), reward, done, {}
+        return self._get_obs(), self._reward(), self._terminal(), {}
 
     def reset(self):
         self.state = State(
@@ -115,12 +111,12 @@ class CartPoleSwingUpEnv(gym.Env):
 
     def render(self, mode="human"):
         if self.viewer is None:
-            self.viewer = CartPoleSwingUpViewer(self.physics)
+            self.viewer = CartPoleSwingUpViewer(self.cart, self.pole, world_width=5)
 
         if self.state is None:
             return None
 
-        self.viewer.update(self.state, self.physics)
+        self.viewer.update(self.state, self.pole)
         return self.viewer.render(return_rgb_array=mode == "rgb_array")
 
     def close(self):
@@ -129,80 +125,66 @@ class CartPoleSwingUpEnv(gym.Env):
             self.viewer = None
 
     def _get_obs(self):
-        state = self.state
-        return np.array(
-            [
-                state.x_pos,
-                state.x_dot,
-                np.cos(state.theta),
-                np.sin(state.theta),
-                state.theta_dot,
-            ]
-        )
+        x_pos, x_dot, theta, theta_dot = self.state
+        return np.array([x_pos, x_dot, np.cos(theta), np.sin(theta), theta_dot])
 
 
 class CartPoleSwingUpViewer:
-    screen = Screen(
-        width=600,
-        height=400,  # before was 600
-        world_width=5,  # max visible position of cart
-        polewidth=6.0,
-        cartwidth=40.0,
-        cartheight=20.0,
-    )
+    screen = Screen(width=600, height=400)
 
-    def __init__(self, physics):
+    def __init__(self, cart, pole, world_width):
+        self.world_width = world_width
         screen = self.screen
+        scale = screen.width / self.world_width
+        cartwidth, cartheight = scale * cart.width, scale * cart.height
+        polewidth, polelength = scale * pole.width, scale * pole.length
         self.viewer = rendering.Viewer(screen.width, screen.height)
         self.transforms = {
             "cart": rendering.Transform(),
             "pole": rendering.Transform(translation=(0, 0)),
             "pole_bob": rendering.Transform(),
             "wheel_l": rendering.Transform(
-                translation=(-screen.cartwidth / 2, -screen.cartheight / 2)
+                translation=(-cartwidth / 2, -cartheight / 2)
             ),
             "wheel_r": rendering.Transform(
-                translation=(screen.cartwidth / 2, -screen.cartheight / 2)
+                translation=(cartwidth / 2, -cartheight / 2)
             ),
         }
 
-        self._init_track()
-        self._init_cart()
-        self._init_pole(physics)
-        self._init_axle()
+        self._init_track(cartheight)
+        self._init_cart(cartwidth, cartheight)
+        self._init_wheels(cartheight)
+        self._init_pole(polewidth, polelength)
+        self._init_axle(polewidth)
         # Make another circle on the top of the pole
-        self._init_pole_bob()
-        self._init_wheels()
+        self._init_pole_bob(polewidth)
 
-    def _init_track(self):
+    def _init_track(self, cartheight):
         screen = self.screen
         carty = screen.height / 2
-        track_height = carty - screen.cartheight / 2 - screen.cartheight / 4
+        track_height = carty - cartheight / 2 - cartheight / 4
         track = rendering.Line((0, track_height), (screen.width, track_height))
         track.set_color(0, 0, 0)
         self.viewer.add_geom(track)
 
-    def _init_cart(self):
-        screen = self.screen
+    def _init_cart(self, cartwidth, cartheight):
         lef, rig, top, bot = (
-            -screen.cartwidth / 2,
-            screen.cartwidth / 2,
-            screen.cartheight / 2,
-            -screen.cartheight / 2,
+            -cartwidth / 2,
+            cartwidth / 2,
+            cartheight / 2,
+            -cartheight / 2,
         )
         cart = rendering.FilledPolygon([(lef, bot), (lef, top), (rig, top), (rig, bot)])
         cart.add_attr(self.transforms["cart"])
         cart.set_color(1, 0, 0)
         self.viewer.add_geom(cart)
 
-    def _init_pole(self, physics):
-        screen = self.screen
-        scale = screen.width / screen.world_width
+    def _init_pole(self, polewidth, polelength):
         lef, rig, top, bot = (
-            -screen.polewidth / 2,
-            screen.polewidth / 2,
-            scale * physics.polelen - screen.polewidth / 2,
-            -screen.polewidth / 2,
+            -polewidth / 2,
+            polewidth / 2,
+            polelength - polewidth / 2,
+            -polewidth / 2,
         )
         pole = rendering.FilledPolygon([(lef, bot), (lef, top), (rig, top), (rig, bot)])
         pole.set_color(0, 0, 1)
@@ -210,25 +192,24 @@ class CartPoleSwingUpViewer:
         pole.add_attr(self.transforms["cart"])
         self.viewer.add_geom(pole)
 
-    def _init_axle(self):
-        axle = rendering.make_circle(self.screen.polewidth / 2)
+    def _init_axle(self, polewidth):
+        axle = rendering.make_circle(polewidth / 2)
         axle.add_attr(self.transforms["pole"])
         axle.add_attr(self.transforms["cart"])
         axle.set_color(0.1, 1, 1)
         self.viewer.add_geom(axle)
 
-    def _init_pole_bob(self):
-        pole_bob = rendering.make_circle(self.screen.polewidth / 2)
+    def _init_pole_bob(self, polewidth):
+        pole_bob = rendering.make_circle(polewidth / 2)
         pole_bob.add_attr(self.transforms["pole_bob"])
         pole_bob.add_attr(self.transforms["pole"])
         pole_bob.add_attr(self.transforms["cart"])
         pole_bob.set_color(0, 0, 0)
         self.viewer.add_geom(pole_bob)
 
-    def _init_wheels(self):
-        screen = self.screen
-        wheel_l = rendering.make_circle(screen.cartheight / 4)
-        wheel_r = rendering.make_circle(screen.cartheight / 4)
+    def _init_wheels(self, cartheight):
+        wheel_l = rendering.make_circle(cartheight / 4)
+        wheel_r = rendering.make_circle(cartheight / 4)
         wheel_l.add_attr(self.transforms["wheel_l"])
         wheel_l.add_attr(self.transforms["cart"])
         wheel_r.add_attr(self.transforms["wheel_r"])
@@ -238,17 +219,16 @@ class CartPoleSwingUpViewer:
         self.viewer.add_geom(wheel_l)
         self.viewer.add_geom(wheel_r)
 
-    def update(self, state, physics):
+    def update(self, state, pole):
         screen = self.screen
-        scale = screen.width / screen.world_width
+        scale = screen.width / self.world_width
 
         cartx = state.x_pos * scale + screen.width / 2.0  # MIDDLE OF CART
         carty = screen.height / 2
         self.transforms["cart"].set_translation(cartx, carty)
         self.transforms["pole"].set_rotation(state.theta)
         self.transforms["pole_bob"].set_translation(
-            -physics.polelen * np.sin(state.theta),
-            physics.polelen * np.cos(state.theta),
+            -pole.length * np.sin(state.theta), pole.length * np.cos(state.theta)
         )
 
     def render(self, *args, **kwargs):
