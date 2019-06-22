@@ -9,7 +9,6 @@ import numpy as np
 import gym
 from gym import spaces
 from gym.utils import seeding
-from gym.envs.classic_control import rendering
 
 
 Physics = namedtuple("Physics", "gravity forcemag deltat friction")
@@ -133,6 +132,8 @@ class CartPoleSwingUpViewer:
     screen = Screen(width=600, height=400)
 
     def __init__(self, cart, pole, world_width):
+        from gym.envs.classic_control import rendering
+
         self.world_width = world_width
         screen = self.screen
         scale = screen.width / self.world_width
@@ -151,15 +152,15 @@ class CartPoleSwingUpViewer:
             ),
         }
 
-        self._init_track(cartheight)
-        self._init_cart(cartwidth, cartheight)
-        self._init_wheels(cartheight)
-        self._init_pole(polewidth, polelength)
-        self._init_axle(polewidth)
+        self._init_track(rendering, cartheight)
+        self._init_cart(rendering, cartwidth, cartheight)
+        self._init_wheels(rendering, cartheight)
+        self._init_pole(rendering, polewidth, polelength)
+        self._init_axle(rendering, polewidth)
         # Make another circle on the top of the pole
-        self._init_pole_bob(polewidth)
+        self._init_pole_bob(rendering, polewidth)
 
-    def _init_track(self, cartheight):
+    def _init_track(self, rendering, cartheight):
         screen = self.screen
         carty = screen.height / 2
         track_height = carty - cartheight / 2 - cartheight / 4
@@ -167,7 +168,7 @@ class CartPoleSwingUpViewer:
         track.set_color(0, 0, 0)
         self.viewer.add_geom(track)
 
-    def _init_cart(self, cartwidth, cartheight):
+    def _init_cart(self, rendering, cartwidth, cartheight):
         lef, rig, top, bot = (
             -cartwidth / 2,
             cartwidth / 2,
@@ -179,7 +180,7 @@ class CartPoleSwingUpViewer:
         cart.set_color(1, 0, 0)
         self.viewer.add_geom(cart)
 
-    def _init_pole(self, polewidth, polelength):
+    def _init_pole(self, rendering, polewidth, polelength):
         lef, rig, top, bot = (
             -polewidth / 2,
             polewidth / 2,
@@ -192,14 +193,14 @@ class CartPoleSwingUpViewer:
         pole.add_attr(self.transforms["cart"])
         self.viewer.add_geom(pole)
 
-    def _init_axle(self, polewidth):
+    def _init_axle(self, rendering, polewidth):
         axle = rendering.make_circle(polewidth / 2)
         axle.add_attr(self.transforms["pole"])
         axle.add_attr(self.transforms["cart"])
         axle.set_color(0.1, 1, 1)
         self.viewer.add_geom(axle)
 
-    def _init_pole_bob(self, polewidth):
+    def _init_pole_bob(self, rendering, polewidth):
         pole_bob = rendering.make_circle(polewidth / 2)
         pole_bob.add_attr(self.transforms["pole_bob"])
         pole_bob.add_attr(self.transforms["pole"])
@@ -207,7 +208,7 @@ class CartPoleSwingUpViewer:
         pole_bob.set_color(0, 0, 0)
         self.viewer.add_geom(pole_bob)
 
-    def _init_wheels(self, cartheight):
+    def _init_wheels(self, rendering, cartheight):
         wheel_l = rendering.make_circle(cartheight / 4)
         wheel_r = rendering.make_circle(cartheight / 4)
         wheel_l.add_attr(self.transforms["wheel_l"])
